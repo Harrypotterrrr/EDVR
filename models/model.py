@@ -1,5 +1,15 @@
 import tensorflow as tf
 
+from models import EDVR
+
+
+def EDVR_model_fn(features, labels, mode, params):
+    netG = EDVR.EDVR(params["nf"], params["nframes"],
+                     params["groups"], params["front_RBs"],
+                     params["back_RBs"], params["center"],
+                     params["predeblur"], params["HR_in"],
+                     params["w_TSA"])
+
 class ExampleModel(tf.keras.Model):
     def __init__(self):
         super(ExampleModel, self).__init__()

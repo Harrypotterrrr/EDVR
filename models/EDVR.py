@@ -15,8 +15,9 @@ from models.Predeblur import Predeblur_ResNet_Pyramid
 
 class EDVR(object):
 
-    def __init__(self, nf=64, nframes=5, groups=8, front_RBs=5, back_RBs=10,
+    def __init__(self, config=None, nf=64, nframes=5, groups=8, front_RBs=5, back_RBs=10,
                  center=None, predeblur=False, HR_in=False, w_TSA=True):
+        self.config = config
         self.nf = nf
         self.center = nframes // 2 if center is None else center
         self.is_predeblur = True if predeblur else False
@@ -130,11 +131,13 @@ class EDVR(object):
         out = tf.add(out, base)
         return out
 
-    @staticmethod
-    def l1_loss(x, y, eps=1e-6):
+    def l1_loss(self, x, y, eps=1e-6):
         diff = x - y
         loss = tf.reduce_sum(tf.sqrt(diff * diff + eps))
         return loss
+
+    def charbonnier_loss(self, x, y):
+        loss = tf.reduce_mean(tf.pow(tf.square(x - y) + tf.square(self.config["epsilon"]), self.config["alpha"]))
 
 
 if __name__ == "__main__":
