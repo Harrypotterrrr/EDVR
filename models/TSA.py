@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow import keras
 
+
 class TSA_Fusion(object):
     ''' Temporal Spatial Attention fusion module
     Temporal: correlation;

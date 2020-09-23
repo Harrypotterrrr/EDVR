@@ -2,6 +2,7 @@ import tensorflow as tf
 from tqdm import tqdm
 import numpy as np
 
+
 class Trainer:
     def __init__(self, model, data, config):
         self.model = model

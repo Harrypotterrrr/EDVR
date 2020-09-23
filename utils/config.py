@@ -18,7 +18,6 @@ def get_config_from_json(json_file):
 
     return config, config_dict
 
-
 def process_config(json_file=""):
     # config, _ = get_config_from_json(json_file)
     config = get_parameters()

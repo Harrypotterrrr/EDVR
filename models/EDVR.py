@@ -146,4 +146,3 @@ if __name__ == "__main__":
     x = tf.ones(shape=[4, 5, 64, 64, 3])
     model = EDVR()
     print(model(x))
-

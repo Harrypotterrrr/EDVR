@@ -10,6 +10,7 @@ def EDVR_model_fn(features, labels, mode, params):
                      params["predeblur"], params["HR_in"],
                      params["w_TSA"])
 
+
 class ExampleModel(tf.keras.Model):
     def __init__(self):
         super(ExampleModel, self).__init__()

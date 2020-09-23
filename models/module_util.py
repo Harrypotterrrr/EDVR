@@ -36,6 +36,7 @@ def residualblock_nobn(x, nf=64):
     out = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same")(out)
     return identity + out
 
+
 def _interpolate_bilinear(grid,
                           query_points,
                           name='interpolate_bilinear',

@@ -9,6 +9,7 @@ from utils.config import process_config
 
 # config_path = "configs/config.json"
 
+
 def main():
     config = process_config()
     train_data = DatasetGenerator(config)()

@@ -3,6 +3,7 @@ from tensorflow import keras
 
 from models import module_util
 
+
 class Predeblur_ResNet_Pyramid(object):
     def __init__(self, nf=128, HR_in=False):
         """

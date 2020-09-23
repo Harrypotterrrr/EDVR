@@ -1,12 +1,10 @@
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-import os
 import PIL
 import pathlib
 import numpy as np
 import tensorflow as tf
-import tensorflow_datasets as tfds
 
 
 class DatasetGenerator:

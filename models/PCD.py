@@ -3,6 +3,7 @@ from tensorflow import keras
 
 from deformable_conv import deform_layer
 
+
 class PCD_Align(object):
     ''' Alignment module using Pyramid, Cascading and Deformable convolution
         with 3 pyramid levels.
