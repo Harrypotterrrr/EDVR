@@ -1,7 +1,4 @@
 import os
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-
-import PIL
 import pathlib
 import numpy as np
 import tensorflow as tf
@@ -11,9 +8,12 @@ class REDSDataLoader:
 
     def __init__(self, config):
 
+        self.config = config
         self.nframes = config["nframes"]
         self.center = self.nframes // 2
         self.batch_size = config["batch_size"]
+        self.buffer_size = config["buffer_size"]
+        self.prefetch_buffer_size = config["prefetch_buffer_size"]
 
         self.root_path = config["root_path"]
         self.train_path = os.path.join(self.root_path, 'train')
@@ -32,14 +32,14 @@ class REDSDataLoader:
         # self.train_path = root_path.joinpath('train')
 
         train_blur_bicubic_paths = []
-        train_blur_bicubic_subpath = list(sorted(train_path.glob(f'{config["train_blur_bicubic"]}*')))
+        train_blur_bicubic_subpath = list(sorted(train_path.glob(f'{self.config["train_blur_bicubic"]}*')))
         for subpath in train_blur_bicubic_subpath:
             label = pathlib.Path(subpath).name
-            train_blur_bicubic_subpath = [str(path) for path in train_path.glob(f'{config["train_blur_bicubic"]}{label}/*')]
+            train_blur_bicubic_subpath = [str(path) for path in train_path.glob(f'{self.config["train_blur_bicubic"]}{label}/*')]
             train_blur_bicubic_subpath = self.build_clips(sorted(train_blur_bicubic_subpath))
             train_blur_bicubic_paths.extend(train_blur_bicubic_subpath)
 
-        train_blur_paths = list(sorted(train_path.glob(f'{config["train_blur"]}*/*')))
+        train_blur_paths = list(sorted(train_path.glob(f'{self.config["train_blur"]}*/*')))
         train_blur_paths = [str(path) for path in train_blur_paths]
 
         train_blur_bicubic_ctr = len(train_blur_bicubic_paths)
@@ -50,7 +50,7 @@ class REDSDataLoader:
         return train_blur_bicubic_paths, train_blur_paths
 
     def build_dataloader(self, x_paths, y_paths): # deprecated
-        ds = tf.data.Dataset.from_tensor_slices((x_paths, y_paths))
+        self.dataset = tf.data.Dataset.from_tensor_slices((x_paths, y_paths))
 
         def convert_types(image):
             image = tf.cast(image, tf.float32)
@@ -69,8 +69,8 @@ class REDSDataLoader:
 
             return x_image, y_image
 
-        self.dataset = ds.map(load_image)
-        self.dataset = self.ds.shuffle(len(ds)).batch(self.batch_size)  # .repeat(10)
+        self.dataset = self.dataset.shuffle(len(self.dataset))
+        self.dataset = self.dataset.map(load_image).batch(self.batch_size)  # .repeat(10)
 
     def build_tfrecord(self, x_paths, y_paths):
 
@@ -167,17 +167,18 @@ class REDSDataLoader:
             feature_dict = tf.io.parse_single_example(example_string, feature_description)
             images = []
             for i in range(self.nframes):
-                image = tf.io.decode_png(feature_dict[f'frame{i}'])
+                image = tf.io.decode_png(feature_dict[f'frame{i}'], channels=3)
                 image = tf.cast(image, dtype='float32') / 255.
                 images.append(image)
             images = tf.stack(images)
-            target = tf.io.decode_png(feature_dict['target'])
+            target = tf.io.decode_png(feature_dict['target'], channels=3)
             target = tf.cast(target, dtype='float32') / 255.
             return images, target
 
-        self.dataset = self.dataset.map(_load_image)  # 解析数据
-        self.dataset = self.dataset.shuffle(buffer_size=100)  # 在缓冲区中随机打乱数据 TODO
+        self.dataset = self.dataset.shuffle(buffer_size=self.buffer_size)
+        self.dataset = self.dataset.map(_load_image)
         self.dataset = self.dataset.batch(batch_size=self.batch_size)
+        self.dataset = self.dataset.prefetch(buffer_size=self.prefetch_buffer_size)
 
     def preprocess(self):
         self.train_data = self.train_data.map(
@@ -198,12 +199,16 @@ if __name__ == "__main__":
     from utils.config import process_config
     config = process_config()
 
+
+
+    from models.EDVR import EDVR
+    x = tf.ones(shape=[4, 5, 64, 64, 3])
+    model = EDVR()
+
     dataloader = REDSDataLoader(config)
     for step, (inputs, targets) in enumerate(dataloader()):
         print(inputs.shape)
         print(targets.shape)
-
-    # from models.EDVR import EDVR
-    # model = EDVR()
-    # for step, (inputs, targets) in enumerate(dataloader()):
-    #     y = model(inputs)
+        with tf.GradientTape() as tape:
+            y = model(inputs)
+        print(y.shape)
