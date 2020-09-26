@@ -3,8 +3,11 @@ from tensorflow import keras
 from deformable_conv import deform_conv
 
 
-class DeformableConv2D(object):
+class DeformableConv2D(tf.keras.Model):
+
     def __init__(self, filters, use_seperate_conv=True, kernel_size=(3, 3), **kwargs):
+        super(DeformableConv2D, self).__init__()
+
         self.filters = filters
         if use_seperate_conv:
             self.dcn_conv = keras.layers.SeparableConv2D(filters=filters * 3, kernel_size=kernel_size, padding='same',
@@ -53,8 +56,10 @@ class DeformableConv2D(object):
         x = tf.transpose(x, [0, 2, 3, 1])
         return x
 
-class DCN_seq(object):
+class DCN_seq(tf.keras.Model):
     def __init__(self, filters, use_seperate_conv=True, kernel_size=(3, 3), **kwargs):
+        super(DCN_seq, self).__init__()
+
         self.filters = filters
         if use_seperate_conv:
             self.dcn_conv = keras.layers.SeparableConv2D(filters=filters * 3, kernel_size=kernel_size, padding='same',

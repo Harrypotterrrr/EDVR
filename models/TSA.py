@@ -2,12 +2,14 @@ import tensorflow as tf
 from tensorflow import keras
 
 
-class TSA_Fusion(object):
+class TSA_Fusion(tf.keras.Model):
     ''' Temporal Spatial Attention fusion module
     Temporal: correlation;
     Spatial: 3 pyramid levels.
     '''
     def __init__(self, nf=64, nframes=5, center=2):
+        super(TSA_Fusion, self).__init__()
+
         self.center = center
         # temporal attention (before fusion conv)
         self.tAtt_1 = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same")
@@ -28,13 +30,16 @@ class TSA_Fusion(object):
         self.sAtt_add_1 = keras.layers.Conv2D(nf, (1, 1), (1, 1))
         self.sAtt_add_2 = keras.layers.Conv2D(nf, (1, 1), (1, 1))
         self.lrelu = keras.layers.LeakyReLU(0.1)
+
     def __call__(self, aligned_fea):
+
         aligned_fea_shape = tf.shape(aligned_fea)
         B = aligned_fea_shape[0]
         N = aligned_fea_shape[1]
         H = aligned_fea_shape[2]
         W = aligned_fea_shape[3]
         C = aligned_fea_shape[4]
+        print("aligned_feature.shape:", aligned_fea.shape)
         emb_ref = self.tAtt_2(aligned_fea[:, self.center, :, :, :])
         emb = tf.reshape(self.tAtt_1(tf.reshape(aligned_fea, [-1, H, W, C])), [B, N, H, W, -1])
         cor_l = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)

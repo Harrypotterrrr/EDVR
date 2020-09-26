@@ -4,11 +4,13 @@ from tensorflow import keras
 from deformable_conv import deform_layer
 
 
-class PCD_Align(object):
+class PCD_Align(tf.keras.Model):
     ''' Alignment module using Pyramid, Cascading and Deformable convolution
         with 3 pyramid levels.
     '''
     def __init__(self, nf=64, groups=8):
+        super(PCD_Align, self).__init__()
+
         # L3: level3, 1/4 spatial size
         self.L3_offset_conv1 = keras.layers.Conv2D(nf, (3, 3), (1, 1), padding="same")  # concat for diff
         self.L3_offset_conv2 = keras.layers.Conv2D(nf, (3, 3), (1, 1), padding="same")

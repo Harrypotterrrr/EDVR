@@ -4,12 +4,14 @@ from tensorflow import keras
 from models import module_util
 
 
-class Predeblur_ResNet_Pyramid(object):
+class Predeblur_ResNet_Pyramid(tf.keras.Model):
     def __init__(self, nf=128, HR_in=False):
         """
         :param nf: number of filters
         :param HR_in: True if the inputs are high spatial size
         """
+        super(Predeblur_ResNet_Pyramid, self).__init__()
+
         self.HR_in = True if HR_in else False
         if self.HR_in:
             self.conv_first_1 = keras.layers.Conv2D(nf, (3, 3), strides=(1, 1), padding="same", use_bias=True)
