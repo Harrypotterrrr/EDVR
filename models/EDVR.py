@@ -1,4 +1,6 @@
 import os
+# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 import functools
 import tensorflow as tf
 from tensorflow import keras
@@ -8,18 +10,19 @@ from models.PCD import PCD_Align
 from models.TSA import TSA_Fusion
 from models.Predeblur import Predeblur_ResNet_Pyramid
 
-# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-# logging.disable(logging.WARNING)
-# tf.get_logger().setLevel('INFO')
 
+class EDVR(tf.keras.Model):
 
-class EDVR(object):
-
-    def __init__(self, config=None, nf=64, nframes=5, groups=8, front_RBs=5, back_RBs=10,
+    def __init__(self, config=None, nf=64, groups=8, front_RBs=5, back_RBs=10,
                  center=None, predeblur=False, HR_in=False, w_TSA=True):
+        super(EDVR, self).__init__()
+
         self.config = config
+        self.nframes = config["nframes"]
+
+        self.loss_object = self.charbonnier_loss
         self.nf = nf
-        self.center = nframes // 2 if center is None else center
+        self.center = config["nframes"] // 2 if center is None else center
         self.is_predeblur = True if predeblur else False
         self.HR_in = True if HR_in else False
         self.w_TSA = w_TSA
@@ -51,14 +54,14 @@ class EDVR(object):
         #### upsampling
         self.upconv1 = keras.layers.Conv2D(nf * 4, (3, 3), (1, 1), "same")
         self.upconv2 = keras.layers.Conv2D(64 * 4, (3, 3), (1, 1), "same")
-        self.pixel_shuffle = lambda x:tf.nn.depth_to_space(x, 2)
+        self.pixel_shuffle = lambda x: tf.nn.depth_to_space(x, 2)
         self.HRconv = keras.layers.Conv2D(64, (3, 3), (1, 1), "same")
         self.conv_last = keras.layers.Conv2D(3, (3, 3), (1, 1), "same")
         #### activation function
         self.lrelu = keras.layers.LeakyReLU(0.1)
 
     def __call__(self, x):
-        x_shape = tf.shape(x)
+        x_shape = x.shape
         B = x_shape[0]
         N = x_shape[1]
         H = x_shape[2]
@@ -84,6 +87,7 @@ class EDVR(object):
             else:
                 L1_fea = self.lrelu(self.conv_first(tf.reshape(x, [-1, H, W, C])))
         L1_fea = self.feature_extraction(L1_fea)
+
         # L2
         L2_fea = self.lrelu(self.fea_L2_conv1(L1_fea))
         L2_fea = self.lrelu(self.fea_L2_conv2(L2_fea))
@@ -100,20 +104,32 @@ class EDVR(object):
             L1_fea[:, self.center, :, :, :], L2_fea[:, self.center, :, :, :],
             L3_fea[:, self.center, :, :, :]
         ]
-        aligned_fea = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        def cond(i, N, fea_col):
-            return i < N
-        def body(i, N, fea_col):
+        # aligned_fea = tf.TensorArray(dtype=tf.float32,
+        #                              size=0, dynamic_size=True,
+        #                              element_shape=[B, H, W, self.nf]) # TODO potential bug for deblurring task
+
+        aligned_fea = []
+        for i in range(N):
             nbr_fea_l = [
-                L1_fea[:, i, :, :, :], L2_fea[:, i, :, :, :],
+                L1_fea[:, i, :, :, :],
+                L2_fea[:, i, :, :, :],
                 L3_fea[:, i, :, :, :]
             ]
-            fea_col = fea_col.write(i, self.pcd_align(nbr_fea_l, ref_fea_l))
-            i = tf.add(i, 1)
-            return i, N, fea_col
-        _, _, aligned_fea = tf.while_loop(cond, body, [0, N, aligned_fea])
-        aligned_fea = aligned_fea.stack()
+            # aligned_fea = aligned_fea.write(i, self.pcd_align(nbr_fea_l, ref_fea_l))
+            aligned_fea.append(self.pcd_align(nbr_fea_l, ref_fea_l))
+
+        aligned_fea = tf.stack(aligned_fea)
+
+        # deprecated codes using static Graph mode
+        # aligned_fea = aligned_fea.stack() # [N, B, H, W, C]
+        # aligned_H, aligned_W, aligned_C = aligned_fea.shape[2], aligned_fea.shape[3], aligned_fea.shape[4]
+        # for i in aligned_shape:
+        #     tf.print(i)
+        # print(aligned_shape)
+        # aligned_fea = tf.reshape(aligned_fea, [self.nframes, B, aligned_H, aligned_W, aligned_C])
+
         aligned_fea = tf.transpose(aligned_fea, [1, 0, 2, 3, 4])  # [B, N, H, W, C]
+
         if not self.w_TSA:
             aligned_fea = aligned_fea.view(B, -1, H, W)
         fea = self.tsa_fusion(aligned_fea)
@@ -131,18 +147,11 @@ class EDVR(object):
         out = tf.add(out, base)
         return out
 
-    def l1_loss(self, x, y, eps=1e-6):
-        diff = x - y
-        loss = tf.reduce_sum(tf.sqrt(diff * diff + eps))
-        return loss
-
     def charbonnier_loss(self, x, y):
-        loss = tf.reduce_mean(tf.pow(tf.square(x - y) + tf.square(self.config["epsilon"]), self.config["alpha"]))
+        return tf.reduce_mean(tf.pow(tf.square(x - y) + tf.square(self.config["epsilon"]), self.config["alpha"]))
 
 
 if __name__ == "__main__":
-
-    # tf.enable_eager_execution()
     x = tf.ones(shape=[4, 5, 64, 64, 3])
     model = EDVR()
     print(model(x))
