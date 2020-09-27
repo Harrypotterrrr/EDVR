@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow import keras
-from deformable_conv.deform_layer import DeformableConv2D
+from models.deformable_conv.deform_layer import DeformableConv2D
 
 
 def get_deformable_cnn():

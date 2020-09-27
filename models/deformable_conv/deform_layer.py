@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow import keras
-from deformable_conv import deform_conv
+from models.deformable_conv import deform_conv
 
 
 class DeformableConv2D(tf.keras.Model):
