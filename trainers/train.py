@@ -1,65 +1,89 @@
-import tensorflow as tf
-from tqdm import tqdm
+import time
+import datetime
 import numpy as np
+import tensorflow as tf
+from tensorflow.keras.utils import Progbar
 
 
 class Trainer:
-    def __init__(self, model, data, config):
-        self.model = model
-        self.data = data
+    def __init__(self, config, model, dataloader):
         self.config = config
-        self.optimizer = tf.optimizers.Adam(learning_rate=self.config.learning_rate)
-        self.train_loss = tf.keras.metrics.Mean(name='train_loss')
-        self.train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
 
-        # multiple GPU
-        visible_gpus = tf.config.experimental.list_physical_devices('GPU')
-        print('Visible devices : ', visible_gpus)
-        gpu_ids = [0]
-        devices = ['/device:GPU:{}'.format(i) for i in gpu_ids]
-        self.strategy = tf.distribute.MirroredStrategy(devices=devices)
+        self.pretrained_model = self.config["pretrained_model"]
 
-        # Global batch size
-        BATCH_SIZE_PER_REPLICA = 2
-        GLOBAL_BATCH_SIZE = BATCH_SIZE_PER_REPLICA * self.strategy.num_replicas_in_sync
-        # Buffer size for data loader
-        BUFFER_SIZE = BATCH_SIZE_PER_REPLICA * self.strategy.num_replicas_in_sync * 16
+        self.batch_size = self.config["batch_size"]
+        self.num_epoch = self.config["num_epoch"]
+        self.lr = self.config["lr"]
 
-        self.data = self.strategy.experimental_distribute_dataset(self.data)
+        self.total_sample = self.config["total_sample"]
+        self.num_step = (self.total_sample + self.batch_size - 1) // self.batch_size
+
+        self.log_epoch = self.config["log_epoch"]
+        self.sample_epoch = self.config["sample_epoch"]
+        self.model_save_epoch = self.config["model_save_epoch"]
+
+        self.model_save_path = self.config["model_save_path"]
+
+
+        self.log_template = "Epoch: [%d/%d], Step: [%d/%d], time: %s, loss: %.7f, psnr: %.4f, lr: %.2e"
+
+        self.model = model(config)
+        self.optimizer = tf.optimizers.Adam(learning_rate=self.config["lr"])
+        self.dataset = dataloader()
+
+    def calc_psnr(self, pred, target, max_val=1.0): # TODO max_val
+        psnr = tf.image.psnr(pred, target, max_val=max_val)
+        return tf.reduce_mean(psnr)
+
+    def calc_time(self, start_time):
+        elapsed = time.time() - start_time
+        elapsed = str(datetime.timedelta(seconds=elapsed))
+        start_time = time.time()
+
+        return elapsed, start_time
 
     @tf.function
     def train_step(self, x, y):
-        with self.strategy.scope():
-            with tf.GradientTape() as tape:
-                predictions = self.model(x)
-                # loss = self.model.loss_object(y, predictions)
-                loss = self.model.l1_loss(y, predictions)
-            gradients = tape.gradient(loss, self.model.trainable_variables)
-            self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+        with tf.GradientTape() as tape:
+            predictions = self.model(x)
+            loss = self.model.loss_object(y, predictions)
 
-            self.train_loss(loss)
-            self.train_accuracy(y, predictions)
+        gradients = tape.gradient(loss, self.model.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
-        return self.train_loss.result(), self.train_accuracy.result()
+        psnr = self.calc_psnr(y, predictions)
+        return loss, psnr
 
-    def train_epoch(self):
-        with self.strategy.scope():
-            loop = tqdm(range(self.config.num_iter_per_epoch))
-            losses = []
-            accs = []
-            for _, (batch_x, batch_y) in zip(loop, self.data):
-                train_loss, train_accuracy = self.train_step(batch_x, batch_y)
-                losses.append(train_loss)
-                accs.append(train_accuracy)
-            loss = np.mean(losses)
-            acc = np.mean(accs)
-        return loss, acc
+    def train_epoch(self, epoch):
+
+        loss_list = []
+        psnr_list = []
+        start_time = time.time()
+        for step, (batch_x, batch_y) in enumerate(self.dataset):
+            loss, psnr = self.train_step(batch_x, batch_y)
+
+            elapsed, start_time = self.calc_time(start_time)
+
+            print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, loss, psnr, self.lr))
+
+            # values = [('train_loss',train_loss), ('train_acc'), train_acc]
+            # self.progbar.update(step * self.batch_size, values=values)
+
+            loss_list.append(loss)
+            psnr_list.append(psnr)
+
+        loss = np.mean(loss_list)
+        psnr = np.mean(psnr_list)
+        return loss, psnr
 
     def train(self):
-        epochs = self.config.num_epochs
-        for epoch in range(1, epochs+1):
-            loss, acc = self.train_epoch()
-            template = "Epoch: {} | Train Loss: {}, Train Accuracy: {}"
-            if epoch % self.config.verbose_epochs == 0:
+        # self.progbar = Progbar(target=self.config["total_sample"], interval=self.config["log_sec"])
+
+        for epoch in range(1, self.num_epoch + 1):
+            # print("epoch {}/{}".format(epoch, self.num_epoch))
+            loss, acc = self.train_epoch(epoch)
+
+            if epoch % self.config["log_epoch"] == 0:
+                pass
                 # TODO: Using logger instead of print function
-                print(template.format(epoch, loss, acc))
+                # print(template.format(epoch, loss, acc))
