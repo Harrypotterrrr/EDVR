@@ -22,8 +22,9 @@ class REDSDataLoader:
 
         self.tfrecord_path = config["tfrecord_path"]
 
+        x_paths, y_paths = self.build_image_paths()
+        self.config['total_sample'] = len(x_paths)
         if not os.path.exists(self.tfrecord_path):
-            x_paths, y_paths = self.build_image_paths()
             self.build_tfrecord(x_paths, y_paths)
 
     def build_image_paths(self): # train_blur_bicubic robustness coding TODO
@@ -196,14 +197,14 @@ class REDSDataLoader:
         return image, label
 
 if __name__ == "__main__":
+
     from utils.config import process_config
     config = process_config()
-
-
+    config["tfrecord_path"] = "../tfrecord"
 
     from models.EDVR import EDVR
     x = tf.ones(shape=[4, 5, 64, 64, 3])
-    model = EDVR()
+    model = EDVR(config)
 
     dataloader = REDSDataLoader(config)
     for step, (inputs, targets) in enumerate(dataloader()):
