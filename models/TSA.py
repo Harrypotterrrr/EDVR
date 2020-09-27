@@ -39,7 +39,6 @@ class TSA_Fusion(tf.keras.Model):
         H = aligned_fea_shape[2]
         W = aligned_fea_shape[3]
         C = aligned_fea_shape[4]
-        print("aligned_feature.shape:", aligned_fea.shape)
         emb_ref = self.tAtt_2(aligned_fea[:, self.center, :, :, :])
         emb = tf.reshape(self.tAtt_1(tf.reshape(aligned_fea, [-1, H, W, C])), [B, N, H, W, -1])
         cor_l = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)

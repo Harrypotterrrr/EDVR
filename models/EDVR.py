@@ -1,6 +1,3 @@
-import os
-# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-
 import functools
 import tensorflow as tf
 from tensorflow import keras
@@ -13,7 +10,7 @@ from models.Predeblur import Predeblur_ResNet_Pyramid
 
 class EDVR(tf.keras.Model):
 
-    def __init__(self, config=None, nf=64, groups=8, front_RBs=5, back_RBs=10,
+    def __init__(self, config=None, nf=16, groups=8, front_RBs=5, back_RBs=10,
                  center=None, predeblur=False, HR_in=False, w_TSA=True):
         super(EDVR, self).__init__()
 
@@ -61,6 +58,7 @@ class EDVR(tf.keras.Model):
         self.lrelu = keras.layers.LeakyReLU(0.1)
 
     def __call__(self, x):
+
         x_shape = x.shape
         B = x_shape[0]
         N = x_shape[1]
@@ -104,28 +102,40 @@ class EDVR(tf.keras.Model):
             L1_fea[:, self.center, :, :, :], L2_fea[:, self.center, :, :, :],
             L3_fea[:, self.center, :, :, :]
         ]
-        # aligned_fea = tf.TensorArray(dtype=tf.float32,
-        #                              size=0, dynamic_size=True,
-        #                              element_shape=[B, H, W, self.nf]) # TODO potential bug for deblurring task
+        aligned_fea = tf.TensorArray(dtype=tf.float32,
+                                     size=0, dynamic_size=True,
+                                     element_shape=[B, H, W, self.nf]) # TODO potential bug for deblurring task
 
-        aligned_fea = []
-        for i in range(N):
+        # aligned_fea = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+
+        def cond(i, N, fea_col):
+            return i < N
+
+        def body(i, N, fea_col):
             nbr_fea_l = [
-                L1_fea[:, i, :, :, :],
-                L2_fea[:, i, :, :, :],
+                L1_fea[:, i, :, :, :], L2_fea[:, i, :, :, :],
                 L3_fea[:, i, :, :, :]
             ]
-            # aligned_fea = aligned_fea.write(i, self.pcd_align(nbr_fea_l, ref_fea_l))
-            aligned_fea.append(self.pcd_align(nbr_fea_l, ref_fea_l))
+            fea_col = fea_col.write(i, self.pcd_align(nbr_fea_l, ref_fea_l))
+            i = tf.add(i, 1)
+            return i, N, fea_col
 
-        aligned_fea = tf.stack(aligned_fea)
+        _, _, aligned_fea = tf.while_loop(cond, body, [0, N, aligned_fea])
+        aligned_fea = aligned_fea.stack() # [N, B, H, W, C]
 
         # deprecated codes using static Graph mode
-        # aligned_fea = aligned_fea.stack() # [N, B, H, W, C]
+        # aligned_fea = []
+        # for i in range(N):
+        #     nbr_fea_l = [
+        #         L1_fea[:, i, :, :, :],
+        #         L2_fea[:, i, :, :, :],
+        #         L3_fea[:, i, :, :, :]
+        #     ]
+        #     aligned_fea.append(self.pcd_align(nbr_fea_l, ref_fea_l))
+        #
+        # aligned_fea = tf.stack(aligned_fea) # [N, B, H, W, C]
+
         # aligned_H, aligned_W, aligned_C = aligned_fea.shape[2], aligned_fea.shape[3], aligned_fea.shape[4]
-        # for i in aligned_shape:
-        #     tf.print(i)
-        # print(aligned_shape)
         # aligned_fea = tf.reshape(aligned_fea, [self.nframes, B, aligned_H, aligned_W, aligned_C])
 
         aligned_fea = tf.transpose(aligned_fea, [1, 0, 2, 3, 4])  # [B, N, H, W, C]
@@ -152,6 +162,7 @@ class EDVR(tf.keras.Model):
 
 
 if __name__ == "__main__":
+
     x = tf.ones(shape=[4, 5, 64, 64, 3])
     model = EDVR()
     print(model(x))
