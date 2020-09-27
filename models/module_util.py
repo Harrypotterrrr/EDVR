@@ -7,19 +7,21 @@ class ResidualBlock_noBN():
     def __init__(self, nf=64):
         self.conv1 = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same")
         self.conv2 = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same")
+        self.relu = keras.layers.ReLU()
+
     def __call__(self, x):
         identify = x
-        out = tf.nn.relu(self.conv1(x))
+        out = self.relu(self.conv1(x))
         out = self.conv2(out)
         return identify + out
 
 class Module():
     def __init__(self, block, n_layers):
         self.n_layers = n_layers
-        self.block = block
+        self.block = block()
     def __call__(self, x):
         for i in range(self.n_layers):
-            x = self.block()(x)
+            x = self.block(x)
         return x
 
 def make_layer(block, n_layers):
