@@ -29,9 +29,14 @@ class Trainer:
 
         self.log_template = "Epoch: [%d/%d], Step: [%d/%d], time: %s, loss: %.7f, psnr: %.4f, lr: %.2e"
 
-        self.model = model(config)
-        self.optimizer = tf.optimizers.Adam(learning_rate=self.config["lr"])
-        self.dataset = dataloader()
+        if self.config['gpus']:
+            self.mirrored_strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0", "/gpu:1"],
+                                                               cross_device_ops=tf.distribute.NcclAllReduce())
+            with self.mirrored_strategy.scope():
+                self.model = model(config)
+                self.optimizer = tf.optimizers.Adam(learning_rate=self.config["lr"])
+                self.dataset = dataloader()
+                self.dataset = self.mirrored_strategy.experimental_distribute_dataset(self.dataset)
 
         self.checkpoint = tf.train.Checkpoint(step=tf.Variable(0), optimizer=self.optimizer, model=self.model)
         self.manager = tf.train.CheckpointManager(self.checkpoint, self.model_save_path, max_to_keep=3)
@@ -65,27 +70,35 @@ class Trainer:
         psnr = self.calc_psnr(y, predictions)
         return loss, psnr
 
+    def multi_train_step(self, x, y):
+        loss, psnr = self.mirrored_strategy.experimental_run_v2(self.train_step, args=(x, y))
+        mean_loss = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, loss, axis=None)
+        mean_psnr = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, psnr, axis=None)
+        return mean_loss, mean_psnr
+
     def train_epoch(self, epoch):
 
         loss_list = []
         psnr_list = []
         start_time = time.time()
-        for step, (batch_x, batch_y) in enumerate(self.dataset):
-            self.checkpoint.step.assign_add(1)
-            loss, psnr = self.train_step(batch_x, batch_y)
+        with self.mirrored_strategy.scope():
+            for step, (batch_x, batch_y) in enumerate(self.dataset):
+                self.checkpoint.step.assign_add(1)
+                # loss, psnr = self.train_step(batch_x, batch_y)
+                loss, psnr = self.multi_train_step(batch_x, batch_y)
 
-            elapsed, start_time = self.calc_time(start_time)
+                elapsed, start_time = self.calc_time(start_time)
 
-            print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, loss, psnr, self.lr))
+                print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, loss, psnr, self.lr))
 
-            # values = [('train_loss',train_loss), ('train_acc'), train_acc]
-            # self.progbar.update(step * self.batch_size, values=values)
+                # values = [('train_loss',train_loss), ('train_acc'), train_acc]
+                # self.progbar.update(step * self.batch_size, values=values)
 
-            loss_list.append(loss)
-            psnr_list.append(psnr)
+                loss_list.append(loss)
+                psnr_list.append(psnr)
 
-            if step % self.model_save_epoch == 0:
-                self.manager.save()  # save checkpoint
+                if step % self.model_save_epoch == 0:
+                    self.manager.save()  # save checkpoint
 
         loss = np.mean(loss_list)
         psnr = np.mean(psnr_list)
