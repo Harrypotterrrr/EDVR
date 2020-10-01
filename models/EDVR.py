@@ -122,6 +122,8 @@ class EDVR(tf.keras.Model):
 
         _, _, aligned_fea = tf.while_loop(cond, body, [0, N, aligned_fea])
         aligned_fea = aligned_fea.stack() # [N, B, H, W, C]
+        aligned_H, aligned_W, aligned_C = aligned_fea.shape[2], aligned_fea.shape[3], aligned_fea.shape[4]
+        aligned_fea = tf.reshape(aligned_fea, [self.nframes, B, aligned_H, aligned_W, aligned_C])
 
         # deprecated codes using static Graph mode
         # aligned_fea = []
@@ -134,9 +136,6 @@ class EDVR(tf.keras.Model):
         #     aligned_fea.append(self.pcd_align(nbr_fea_l, ref_fea_l))
         #
         # aligned_fea = tf.stack(aligned_fea) # [N, B, H, W, C]
-
-        # aligned_H, aligned_W, aligned_C = aligned_fea.shape[2], aligned_fea.shape[3], aligned_fea.shape[4]
-        # aligned_fea = tf.reshape(aligned_fea, [self.nframes, B, aligned_H, aligned_W, aligned_C])
 
         aligned_fea = tf.transpose(aligned_fea, [1, 0, 2, 3, 4])  # [B, N, H, W, C]
 
