@@ -22,9 +22,11 @@ class REDSDataLoader:
 
         self.tfrecord_path = config["tfrecord_path"]
 
+        print("Start preparing images...")
         x_paths, y_paths = self.build_image_paths()
         self.config['total_sample'] = len(x_paths)
         if not os.path.exists(self.tfrecord_path):
+            print("Start building tfrecord...")
             self.build_tfrecord(x_paths, y_paths)
 
     def build_image_paths(self): # train_blur_bicubic robustness coding TODO
@@ -151,6 +153,7 @@ class REDSDataLoader:
         # X_trn = np.stack(X_trn)
 
     def __call__(self):
+        print("Start building dataloader...")
         # self.preprocess()
         self.decode_tfrecord()
         return self.dataset

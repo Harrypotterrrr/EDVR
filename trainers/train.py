@@ -9,8 +9,6 @@ class Trainer:
     def __init__(self, config, model, dataloader):
         self.config = config
 
-
-
         self.pretrained_model = self.config["pretrained_model"]
 
         self.batch_size = self.config["batch_size"]
@@ -27,7 +25,8 @@ class Trainer:
         self.model_save_path = self.config["model_save_path"]
 
 
-        self.log_template = "Epoch: [%d/%d], Step: [%d/%d], time: %s, loss: %.7f, psnr: %.4f, lr: %.2e"
+        self.log_template = "Epoch: [%d/%d], Step: [%d/%d], time: %s/%s, loss: %.7f, psnr: %.4f, lr: %.2e"
+        self.total_time = 0
 
         if self.config['gpus']:
             self.mirrored_strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0", "/gpu:1"],
@@ -51,12 +50,14 @@ class Trainer:
         psnr = tf.image.psnr(pred, target, max_val=max_val)
         return tf.reduce_mean(psnr)
 
-    def calc_time(self, start_time):
-        elapsed = time.time() - start_time
+    def calc_time(self):
+        elapsed = time.time() - self.start_time
+        self.total_time += elapsed
         elapsed = str(datetime.timedelta(seconds=elapsed))
-        start_time = time.time()
+        total_time = str(datetime.timedelta(seconds=int(self.total_time)))
+        self.start_time = time.time()
 
-        return elapsed, start_time
+        return elapsed, total_time
 
     @tf.function
     def train_step(self, x, y):
@@ -71,7 +72,7 @@ class Trainer:
         return loss, psnr
 
     def multi_train_step(self, x, y):
-        loss, psnr = self.mirrored_strategy.experimental_run_v2(self.train_step, args=(x, y))
+        loss, psnr = self.mirrored_strategy.run(self.train_step, args=(x, y))
         mean_loss = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, loss, axis=None)
         mean_psnr = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, psnr, axis=None)
         return mean_loss, mean_psnr
@@ -80,16 +81,17 @@ class Trainer:
 
         loss_list = []
         psnr_list = []
-        start_time = time.time()
+        print("Start training...")
+        self.start_time = time.time()
         with self.mirrored_strategy.scope():
             for step, (batch_x, batch_y) in enumerate(self.dataset):
                 self.checkpoint.step.assign_add(1)
                 # loss, psnr = self.train_step(batch_x, batch_y)
                 loss, psnr = self.multi_train_step(batch_x, batch_y)
 
-                elapsed, start_time = self.calc_time(start_time)
+                elapsed, total_time = self.calc_time()
 
-                print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, loss, psnr, self.lr))
+                print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr))
 
                 # values = [('train_loss',train_loss), ('train_acc'), train_acc]
                 # self.progbar.update(step * self.batch_size, values=values)
