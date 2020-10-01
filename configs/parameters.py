@@ -31,7 +31,7 @@ def get_parameters():
     # parser.add_argument('--total_sample', type=int, default=24000)
 
     # using pretrained
-    parser.add_argument('--pretrained_model', type=bool, default=True)
+    parser.add_argument('--pretrained_model', type=bool, default=False)
 
     # Misc
     parser.add_argument('--train', type=str2bool, default=True)
@@ -45,8 +45,6 @@ def get_parameters():
 
     # Path
     parser.add_argument('--root_path', type=str, default='/home/lz/Disk/jhl/REDS/')
-    parser.add_argument('--train_blur', type=str, default='train_blur/')
-    parser.add_argument('--train_blur_bicubic', type=str, default='train_blur_bicubic/X4/')
     parser.add_argument('--tfrecord_path', type=str, default='./tfrecord')
     parser.add_argument('--image_path', type=str, default='./data')
     parser.add_argument('--log_path', type=str, default='./logs')
@@ -54,10 +52,11 @@ def get_parameters():
     parser.add_argument('--sample_path', type=str, default='./samples')
 
     # epoch size
+    parser.add_argument('--log_step', type=int, default=4)
     parser.add_argument('--log_epoch', type=int, default=1)
     parser.add_argument('--log_sec', type=int, default=5)
-    parser.add_argument('--sample_epoch', type=int, default=20)
-    parser.add_argument('--model_save_epoch', type=int, default=1)
+    parser.add_argument('--val_step', type=int, default=4)
+    parser.add_argument('--model_save_step', type=int, default=500)
 
     # Dataloader
     parser.add_argument('--norm_value', type=int, default=255)
