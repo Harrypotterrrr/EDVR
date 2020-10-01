@@ -3,6 +3,7 @@ import pathlib
 import numpy as np
 import tensorflow as tf
 
+from utils.utils import ColorPrint as cp
 
 class REDSDataLoader:
 
@@ -25,7 +26,7 @@ class REDSDataLoader:
         self.config["val_tfrecord_path"] = f"{self.tfrecord_path}_val"
         self.config["test_tfrecord_path"] = f"{self.tfrecord_path}_test"
 
-        print("Start preparing images...")
+        cp.print_message("Start preparing images...")
         train_x_paths, train_y_paths = self.build_image_paths('train', 'sharp_bicubic', 'sharp') # write into config
         self.config['total_sample'] = len(train_x_paths)
 
@@ -33,11 +34,11 @@ class REDSDataLoader:
             val_x_paths, val_y_paths = self.build_image_paths('val', 'sharp_bicubic', 'sharp')
             test_x_paths, _ = self.build_image_paths('test', 'sharp_bicubic')
 
-            print("Start building train tfrecord...")
+            cp.print_message("Start building train tfrecord...")
             self.build_tfrecord('train', train_x_paths, train_y_paths)
-            print("Start building validation tfrecord...")
+            cp.print_message("Start building validation tfrecord...")
             self.build_tfrecord('val', val_x_paths, val_y_paths)
-            print("Start building test tfrecord...")
+            cp.print_message("Start building test tfrecord...")
             self.build_tfrecord('test', test_x_paths)
 
     def build_image_paths(self, type, x_tag, y_tag=""):
@@ -212,7 +213,7 @@ class REDSDataLoader:
         return dataset.prefetch(buffer_size=self.prefetch_buffer_size)
 
     def __call__(self):
-        print("Start building dataloader...")
+        cp.print_message("Start building dataloader...")
         # self.preprocess()
         self.train_dataset = self.decode_tfrecord('train')
         self.val_dataset = self.decode_tfrecord('val')

@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.utils import Progbar
 
+from utils.utils import ColorPrint as cp
 
 class Trainer:
     def __init__(self, config, model, dataloader):
@@ -98,7 +99,7 @@ class Trainer:
 
         loss_list = []
         psnr_list = []
-        print("Start training...")
+        cp.print_message("Start training...")
         self.start_time = time.time()
         with self.mirrored_strategy.scope():
             for step, (batch_x, batch_y) in enumerate(self.train_dataset):
@@ -115,7 +116,7 @@ class Trainer:
                 psnr_list.append(psnr)
 
                 if step % self.log_step == 0:
-                    print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr))
+                    cp.print_info(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr))
 
                 if step % self.val_step == 0: # TODO print color
                     val_batch_x, val_batch_y = self.val_dataset.get_next()
