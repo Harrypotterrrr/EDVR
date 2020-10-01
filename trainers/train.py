@@ -25,6 +25,7 @@ class Trainer:
         self.model_save_step = self.config["model_save_step"]
 
         self.model_save_path = self.config["model_save_path"]
+        self.log_path = self.config["log_path"]
 
 
         self.log_template = "Epoch: [%d/%d], Step: [%d/%d], time: %s/%s, loss: %.7f, psnr: %.4f, lr: %.2e"
@@ -50,6 +51,8 @@ class Trainer:
             # print(self.manager.checkpoints) # checkpoints list
             # self.checkpoint.restore(tf.train.latest_checkpoint(self.model_save_path))
             print(f"Restored from {self.manager.latest_checkpoint}")
+
+        self.summary_writer = tf.summary.create_file_writer(self.log_path)
 
     def calc_psnr(self, pred, target, max_val=1.0): # TODO max_val
         psnr = tf.image.psnr(pred, target, max_val=max_val)
@@ -116,12 +119,18 @@ class Trainer:
                 psnr_list.append(psnr)
 
                 if step % self.log_step == 0:
-                    cp.print_info(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr))
+                    print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr))
+                    with self.summary_writer.as_default():
+                        tf.summary.scalar("train_loss epoch: " + str(epoch), loss, step=step)
+                        tf.summary.scalar("train_psnr epoch: " + str(epoch), psnr, step=step)
 
                 if step % self.val_step == 0: # TODO print color
                     val_batch_x, val_batch_y = self.val_dataset.get_next()
                     val_loss, val_psnr = self.multi_validate_step(val_batch_x, val_batch_y)
-                    print(self.val_template % (val_loss, val_psnr))
+                    cp.print_success(self.val_template % (val_loss, val_psnr))
+                    with self.summary_writer.as_default():
+                        tf.summary.scalar("val_loss epoch: " + str(epoch), loss, step=step)
+                        tf.summary.scalar("val_psnr epoch: " + str(epoch), psnr, step=step)
 
                 if step % self.model_save_step == 0:
                     self.manager.save()  # save checkpoint
