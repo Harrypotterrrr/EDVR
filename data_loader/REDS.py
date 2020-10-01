@@ -205,9 +205,10 @@ class REDSDataLoader:
             target = tf.cast(target, dtype='float32') / 255.
             return images, target
 
-        dataset = dataset.shuffle(buffer_size=self.buffer_size)
-        dataset = dataset.map(_load_image)
+        dataset = dataset.repeat().shuffle(buffer_size=self.buffer_size)
+        dataset = dataset.map(_load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         dataset = dataset.batch(batch_size=self.batch_size)
+
         return dataset.prefetch(buffer_size=self.prefetch_buffer_size)
 
     def __call__(self):
@@ -216,7 +217,7 @@ class REDSDataLoader:
         self.train_dataset = self.decode_tfrecord('train')
         self.val_dataset = self.decode_tfrecord('val')
         self.test_dataset = self.decode_tfrecord('test')
-        return self.train_dataset, self.test_dataset, self.test_dataset
+        return self.train_dataset, self.val_dataset, self.test_dataset
 
     @staticmethod
     def convert_types(batch):
@@ -236,15 +237,19 @@ if __name__ == "__main__":
     model = EDVR(config)
 
     train_dataset, val_dataset, test_dataset = REDSDataLoader(config)()
+
     # for step, (inputs, targets) in enumerate(train_dataset):
     #     print(inputs.shape)
     #     print(targets.shape)
     #     with tf.GradientTape() as tape:
     #         y = model(inputs)
     #     print(y.shape)
+
+    val_dataset_iter = iter(val_dataset)
     for i in range(100):
-        inputs, targets = next(val_dataset)
+        inputs, targets = val_dataset_iter.get_next()
         print(inputs.shape)
         print(targets.shape)
         y = model(inputs)
         print(y.shape)
+
