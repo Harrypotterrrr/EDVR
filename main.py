@@ -16,7 +16,7 @@ def main():
     model = EDVR
 
     trainer = Trainer(config, model, dataloader)
-    trainer.train() # TODO runing time
+    trainer.train()
 
 
 if __name__ == '__main__':

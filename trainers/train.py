@@ -18,9 +18,10 @@ class Trainer:
         self.total_sample = self.config["total_sample"]
         self.num_step = (self.total_sample + self.batch_size - 1) // self.batch_size
 
+        self.log_step = self.config["log_step"]
         self.log_epoch = self.config["log_epoch"]
         self.sample_epoch = self.config["sample_epoch"]
-        self.model_save_epoch = self.config["model_save_epoch"]
+        self.model_save_step = self.config["model_save_step"]
 
         self.model_save_path = self.config["model_save_path"]
 
@@ -91,7 +92,6 @@ class Trainer:
 
                 elapsed, total_time = self.calc_time()
 
-                print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr))
 
                 # values = [('train_loss',train_loss), ('train_acc'), train_acc]
                 # self.progbar.update(step * self.batch_size, values=values)
@@ -99,7 +99,10 @@ class Trainer:
                 loss_list.append(loss)
                 psnr_list.append(psnr)
 
-                if step % self.model_save_epoch == 0:
+                if step % self.log_step == 0:
+                    print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr))
+
+                if step % self.model_save_step == 0:
                     self.manager.save()  # save checkpoint
 
         loss = np.mean(loss_list)
