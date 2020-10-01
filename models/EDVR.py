@@ -59,7 +59,7 @@ class EDVR(tf.keras.Model):
 
     def __call__(self, x):
 
-        x_shape = x.shape
+        x_shape = tf.shape(x)
         B = x_shape[0]
         N = x_shape[1]
         H = x_shape[2]
@@ -102,11 +102,11 @@ class EDVR(tf.keras.Model):
             L1_fea[:, self.center, :, :, :], L2_fea[:, self.center, :, :, :],
             L3_fea[:, self.center, :, :, :]
         ]
-        aligned_fea = tf.TensorArray(dtype=tf.float32,
-                                     size=0, dynamic_size=True,
-                                     element_shape=[B, H, W, self.nf]) # TODO potential bug for deblurring task
+        # aligned_fea = tf.TensorArray(dtype=tf.float32,
+        #                              size=0, dynamic_size=True,
+        #                              element_shape=[B, H, W, self.nf]) # TODO potential bug for deblurring task
+        aligned_fea = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
 
-        # aligned_fea = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
 
         def cond(i, N, fea_col):
             return i < N
@@ -122,9 +122,10 @@ class EDVR(tf.keras.Model):
 
         _, _, aligned_fea = tf.while_loop(cond, body, [0, N, aligned_fea])
         aligned_fea = aligned_fea.stack() # [N, B, H, W, C]
-        aligned_H, aligned_W, aligned_C = aligned_fea.shape[2], aligned_fea.shape[3], aligned_fea.shape[4]
+        # aligned_shape = tf.shape(aligned_fea) # TODO critical None dimension bug
+        aligned_shape = aligned_fea.shape
+        aligned_H, aligned_W, aligned_C = aligned_shape[2], aligned_shape[3], aligned_shape[4]
         aligned_fea = tf.reshape(aligned_fea, [self.nframes, B, aligned_H, aligned_W, aligned_C])
-
         # deprecated codes using static Graph mode
         # aligned_fea = []
         # for i in range(N):
