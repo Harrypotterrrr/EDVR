@@ -21,24 +21,23 @@ class REDSDataLoader:
         self.test_path = os.path.join(self.root_path, 'test')
 
         self.tfrecord_path = config["tfrecord_path"]
-        self.train_tfrecord_path = f"{self.tfrecord_path}_train"
-        self.val_tfrecord_path = f"{self.tfrecord_path}_val"
-        self.test_tfrecord_path = f"{self.tfrecord_path}_test"
-        self.config["train_tfrecord_path"] = self.train_tfrecord_path
-        self.config["val_tfrecord_path"] = self.val_tfrecord_path
-        self.config["test_tfrecord_path"] = self.test_tfrecord_path
+        self.config["train_tfrecord_path"] = f"{self.tfrecord_path}_train"
+        self.config["val_tfrecord_path"] = f"{self.tfrecord_path}_val"
+        self.config["test_tfrecord_path"] = f"{self.tfrecord_path}_test"
 
         print("Start preparing images...")
-        train_x_paths, train_y_paths = self.build_image_paths('train', 'sharp_bicubic', 'train_sharp')
+        train_x_paths, train_y_paths = self.build_image_paths('train', 'sharp_bicubic', 'sharp') # write into config
         self.config['total_sample'] = len(train_x_paths)
 
-        if not os.path.exists(self.tfrecord_path):
-            val_x_paths, val_y_paths = self.build_image_paths('val', 'sharp_bicubic', 'train_sharp')
+        if not os.path.exists(f"{self.tfrecord_path}_train"):
+            val_x_paths, val_y_paths = self.build_image_paths('val', 'sharp_bicubic', 'sharp')
             test_x_paths, _ = self.build_image_paths('test', 'sharp_bicubic')
 
-            print("Start building tfrecord...")
+            print("Start building train tfrecord...")
             self.build_tfrecord('train', train_x_paths, train_y_paths)
+            print("Start building validation tfrecord...")
             self.build_tfrecord('val', val_x_paths, val_y_paths)
+            print("Start building test tfrecord...")
             self.build_tfrecord('test', test_x_paths)
 
     def build_image_paths(self, type, x_tag, y_tag=""):
@@ -51,14 +50,14 @@ class REDSDataLoader:
             sub_path = pathlib.Path(self.test_path)
         # self.train_path = root_path.joinpath('train')
 
-        x_dir = f"{type}_{x_tag}/X4/" if "bicubic" in "x_tag" else f"{type}_{x_tag}"
-        y_dir = f"{type}_{y_tag}"
+        x_dir = f"{type}_{x_tag}/X4/" if "bicubic" in x_tag else f"{type}_{x_tag}"
+        y_dir = f"{type}_{y_tag}/"
 
         x_paths = []
-        x_subpath = list(sorted(sub_path.glob(f'{self.config[x_dir]}*')))
+        x_subpath = list(sorted(sub_path.glob(f'{x_dir}*')))
         for subpath in x_subpath:
             label = pathlib.Path(subpath).name
-            x_subpath = [str(path) for path in sub_path.glob(f'{self.config[x_dir]}{label}/*')]
+            x_subpath = [str(path) for path in sub_path.glob(f'{x_dir}{label}/*')]
             x_subpath = self.build_clips(sorted(x_subpath))
             x_paths.extend(x_subpath)
 
@@ -68,7 +67,7 @@ class REDSDataLoader:
         if type == "test":
             return x_paths, None
 
-        y_paths = list(sorted(sub_path.glob(f'{self.config[y_dir]}*/*')))
+        y_paths = list(sorted(sub_path.glob(f'{y_dir}*/*')))
         y_paths = [str(path) for path in y_paths]
         y_ctr = len(y_paths)
         print(f"{type} output count: {y_ctr}")
@@ -185,8 +184,8 @@ class REDSDataLoader:
             rtn.append(xx)
         return np.stack(rtn)
 
-    def decode_tfrecord(self):
-        self.dataset = tf.data.TFRecordDataset(self.tfrecord_path)
+    def decode_tfrecord(self, type):
+        dataset = tf.data.TFRecordDataset(f"{self.tfrecord_path}_{type}")
         feature_description = {
             'nframes': tf.io.FixedLenFeature([], tf.int64),
             'target': tf.io.FixedLenFeature([], tf.string)
@@ -206,27 +205,18 @@ class REDSDataLoader:
             target = tf.cast(target, dtype='float32') / 255.
             return images, target
 
-        self.dataset = self.dataset.shuffle(buffer_size=self.buffer_size)
-        self.dataset = self.dataset.map(_load_image)
-        self.dataset = self.dataset.batch(batch_size=self.batch_size)
-        self.dataset = self.dataset.prefetch(buffer_size=self.prefetch_buffer_size)
+        dataset = dataset.shuffle(buffer_size=self.buffer_size)
+        dataset = dataset.map(_load_image)
+        dataset = dataset.batch(batch_size=self.batch_size)
+        return dataset.prefetch(buffer_size=self.prefetch_buffer_size)
 
     def __call__(self):
         print("Start building dataloader...")
         # self.preprocess()
-        self.decode_tfrecord()
-        return self.dataset
-
-    def preprocess(self):
-        self.train_data = self.train_data.map(
-            REDSDataLoader.convert_types
-        ).batch(self.config.batch_size)
-        self.val_data = self.val_data.map(
-            REDSDataLoader.convert_types
-        ).batch(self.config.batch_size)
-        self.test_data = self.test_data.map(
-            REDSDataLoader.convert_types
-        ).batch(self.config.batch_size)
+        self.train_dataset = self.decode_tfrecord('train')
+        self.val_dataset = self.decode_tfrecord('val')
+        self.test_dataset = self.decode_tfrecord('test')
+        return self.train_dataset, self.test_dataset, self.test_dataset
 
     @staticmethod
     def convert_types(batch):
@@ -245,10 +235,16 @@ if __name__ == "__main__":
     x = tf.ones(shape=[4, 5, 64, 64, 3])
     model = EDVR(config)
 
-    dataloader = REDSDataLoader(config)
-    for step, (inputs, targets) in enumerate(dataloader()):
+    train_dataset, val_dataset, test_dataset = REDSDataLoader(config)()
+    # for step, (inputs, targets) in enumerate(train_dataset):
+    #     print(inputs.shape)
+    #     print(targets.shape)
+    #     with tf.GradientTape() as tape:
+    #         y = model(inputs)
+    #     print(y.shape)
+    for i in range(100):
+        inputs, targets = next(val_dataset)
         print(inputs.shape)
         print(targets.shape)
-        with tf.GradientTape() as tape:
-            y = model(inputs)
+        y = model(inputs)
         print(y.shape)
