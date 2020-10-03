@@ -10,18 +10,18 @@ def get_parameters():
 
     # Model hyper-parameters
     parser.add_argument('--model', type=str, default='edvr', choices=['edvr, defcnn'])
-    parser.add_argument('--nframes', type=int, default=5)
-    parser.add_argument('--filter_num', type=int, default=128)
-    parser.add_argument('--lr_schr', type=str, default='const', choices=['const', 'step', 'exp', 'multi', 'reduce'])
     parser.add_argument('--version', type=str, default='')
 
     # Network settings
+    parser.add_argument('--nframes', type=int, default=5)
+    parser.add_argument('--filter_num', type=int, default=128)
 
     # Training setting
     parser.add_argument('--num_epoch', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=4e-4)
     parser.add_argument('--lr_decay', type=float, default=0.9999)
+    parser.add_argument('--lr_schr', type=str, default='const', choices=['const', 'step', 'exp', 'multi', 'reduce'])
     parser.add_argument('--beta1', type=float, default=0.9)
     parser.add_argument('--beta2', type=float, default=0.999)
     parser.add_argument('--alpha', type=float, default=0.45)
@@ -35,7 +35,7 @@ def get_parameters():
     # Misc
     parser.add_argument('--train', type=str2bool, default=True)
     parser.add_argument('--parallel', type=str2bool, default=False)
-    parser.add_argument('-g', '--gpus', default=[2, 3], nargs='+', type=str, help='Specify GPU ids.')
+    parser.add_argument('-g', '--gpus', default=['0', '1', '2', '3'], nargs='+', type=str, help='Specify GPU ids.')
     parser.add_argument('--dataset', type=str, default='reds', choices=['reds', 'vimeo'])
     parser.add_argument('--use_tensorboard', type=str2bool, default=False)
     parser.add_argument('--test_batch_size', type=int, default=8, help='how many batchsize for test and sample')
@@ -50,7 +50,7 @@ def get_parameters():
     parser.add_argument('--log_train_path', type=str, default='train/')
     parser.add_argument('--log_val_path', type=str, default='val/')
 
-    # epoch size
+    # Loop
     parser.add_argument('--log_step', type=int, default=1)
     parser.add_argument('--val_step', type=int, default=5)
     parser.add_argument('--log_block_size', type=int, default=100)

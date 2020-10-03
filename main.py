@@ -1,6 +1,5 @@
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ['CUDA_VISIBLE_DEVICES'] = '2, 3'
 
 from data_loader.REDS import REDSDataLoader
 from models.EDVR import EDVR
@@ -12,6 +11,8 @@ from utils.config import process_config
 
 def main():
     config = process_config()
+    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(config["gpus"])
+
     dataloader = REDSDataLoader(config)
     model = EDVR
 

@@ -12,6 +12,7 @@ class Trainer:
         self.config = config
 
         self.pretrained_model = self.config["pretrained_model"]
+        self.version = self.config["version"]
 
         self.batch_size = self.config["batch_size"]
         self.num_epoch = self.config["num_epoch"]
@@ -40,7 +41,9 @@ class Trainer:
         self.total_time = 0
 
         if self.config['gpus']:
-            self.mirrored_strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0", "/gpu:1"],
+            gpu_list = [f"/gpu:{i}" for i in range(len(self.config['gpus']))]
+            cp.print_message(f'Distributing the model to GPU:{self.config["gpus"]} for training...')
+            self.mirrored_strategy = tf.distribute.MirroredStrategy(devices=gpu_list,
                                                                cross_device_ops=tf.distribute.NcclAllReduce())
             with self.mirrored_strategy.scope():
                 self.model = model(config)
@@ -62,13 +65,13 @@ class Trainer:
         self.train_summary_writer = tf.summary.create_file_writer(self.log_train_path)
         self.val_summary_writer = tf.summary.create_file_writer(self.log_val_path)
 
-    def write_log(self, loss, psnr, logging):
-        with self.train_summary_writer.as_default():
+    def write_log(self, writer, loss, psnr, logging):
+        with writer.as_default():
             block_id = self.total_step / self.log_block_size
             start_step, end_step = block_id * self.log_block_size, (block_id + 1) * self.log_block_size
-            tf.summary.scalar("loss", loss, step=self.total_step)
-            tf.summary.scalar("psnr", psnr, step=self.total_step)
-            tf.summary.text(f"Step {start_step}~{end_step}", logging, step=self.total_step)
+            tf.summary.scalar(f"loss/{self.version}", loss, step=self.total_step)
+            tf.summary.scalar(f"psnr/{self.version}", psnr, step=self.total_step)
+            tf.summary.text(f"{self.version}/Step {start_step}~{end_step}", logging, step=self.total_step)
 
     def calc_psnr(self, pred, target, max_val=1.0): # TODO max_val
         psnr = tf.image.psnr(pred, target, max_val=max_val)
@@ -139,7 +142,7 @@ class Trainer:
                     elapsed, total_time = self.calc_time()
                     logging = self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr)
                     print(logging)
-                    self.write_log(loss, psnr, logging)
+                    self.write_log(self.train_summary_writer, loss, psnr, logging)
 
                 if step % self.val_step == 0:
                     val_batch_x, val_batch_y = self.val_dataset.get_next()
@@ -147,7 +150,7 @@ class Trainer:
 
                     logging = self.val_template % (val_loss, val_psnr)
                     cp.print_success(logging)
-                    self.write_log(loss, psnr, logging)
+                    self.write_log(self.val_summary_writer, val_loss, val_psnr, logging)
 
 
                 if step % self.model_save_step == 0:
