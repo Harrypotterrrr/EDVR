@@ -97,7 +97,7 @@ class REDSDataLoader:
             return x_image, y_image
 
         self.dataset = self.dataset.shuffle(len(self.dataset))
-        self.dataset = self.dataset.map(load_image).batch(self.batch_size)  # .repeat(10)
+        self.dataset = self.dataset.map(load_image).batch(self.batch_size)
 
     def build_tfrecord(self, type, x_paths, y_paths=""):
 
@@ -206,7 +206,9 @@ class REDSDataLoader:
             target = tf.cast(target, dtype='float32') / 255.
             return images, target
 
-        dataset = dataset.repeat().shuffle(buffer_size=self.buffer_size)
+        if type == "val":
+            dataset = dataset.repeat()
+        dataset = dataset.shuffle(buffer_size=self.buffer_size)
         dataset = dataset.map(_load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         dataset = dataset.batch(batch_size=self.batch_size)
 
