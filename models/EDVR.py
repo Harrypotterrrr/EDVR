@@ -10,46 +10,45 @@ from models.Predeblur import Predeblur_ResNet_Pyramid
 
 class EDVR(tf.keras.Model):
 
-    def __init__(self, config=None, nf=16, groups=8, front_RBs=5, back_RBs=10,
-                 center=None, predeblur=False, HR_in=False, w_TSA=True):
-        super(EDVR, self).__init__()
+    def __init__(self, config=None, groups=8, front_RBs=5, back_RBs=10, predeblur=False, HR_in=False, w_TSA=True):
+        super(EDVR, self).__init__() # TODO front_RBs, back_RBs
 
         self.config = config
         self.nframes = config["nframes"]
 
         self.loss_object = self.charbonnier_loss
-        self.nf = nf
-        self.center = config["nframes"] // 2 if center is None else center
+        self.nf = config["filter_num"]
+        self.center = config["nframes"] // 2
         self.is_predeblur = True if predeblur else False
         self.HR_in = True if HR_in else False
         self.w_TSA = w_TSA
-        ResidualBlock_noBN_f = functools.partial(module_util.ResidualBlock_noBN, nf=nf)
+        ResidualBlock_noBN_f = functools.partial(module_util.ResidualBlock_noBN, nf=self.nf)
 
         #### extract features (for each frame)
         if self.is_predeblur:
-            self.pre_deblur = Predeblur_ResNet_Pyramid(nf=nf, HR_in=self.HR_in)
-            self.conv_1x1 = keras.layers.Conv2D(nf, (1, 1), (1, 1))
+            self.pre_deblur = Predeblur_ResNet_Pyramid(nf=self.nf, HR_in=self.HR_in)
+            self.conv_1x1 = keras.layers.Conv2D(self.nf, (1, 1), (1, 1))
         else:
             if self.HR_in:
-                self.conv_first_1 = keras.layers.Conv2D(nf, (3, 3), strides=(1, 1), padding="same", use_bias=True)
-                self.conv_first_2 = keras.layers.Conv2D(nf, (3, 3), strides=(2, 2), padding="same", use_bias=True)
-                self.conv_first_3 = keras.layers.Conv2D(nf, (3, 3), strides=(2, 2), padding="same", use_bias=True)
+                self.conv_first_1 = keras.layers.Conv2D(self.nf, (3, 3), strides=(1, 1), padding="same", use_bias=True)
+                self.conv_first_2 = keras.layers.Conv2D(self.nf, (3, 3), strides=(2, 2), padding="same", use_bias=True)
+                self.conv_first_3 = keras.layers.Conv2D(self.nf, (3, 3), strides=(2, 2), padding="same", use_bias=True)
             else:
-                self.conv_first = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same", use_bias=True)
+                self.conv_first = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same", use_bias=True)
         self.feature_extraction = module_util.Module(ResidualBlock_noBN_f, front_RBs)
-        self.fea_L2_conv1 = keras.layers.Conv2D(nf, (3, 3), (2, 2), "same")
-        self.fea_L2_conv2 = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same")
-        self.fea_L3_conv1 = keras.layers.Conv2D(nf, (3, 3), (2, 2), "same")
-        self.fea_L3_conv2 = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same")
-        self.pcd_align = PCD_Align(nf=nf, groups=groups)
+        self.fea_L2_conv1 = keras.layers.Conv2D(self.nf, (3, 3), (2, 2), "same")
+        self.fea_L2_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
+        self.fea_L3_conv1 = keras.layers.Conv2D(self.nf, (3, 3), (2, 2), "same")
+        self.fea_L3_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
+        self.pcd_align = PCD_Align(nf=self.nf, groups=groups)
         if self.w_TSA:
-            self.tsa_fusion = TSA_Fusion(nf=nf, nframes=nf, center=self.center)
+            self.tsa_fusion = TSA_Fusion(nf=self.nf, nframes=self.nf, center=self.center)
         else:
-            self.tsa_fusion = keras.layers.Conv2D(nf, (1, 1), (1, 1))
+            self.tsa_fusion = keras.layers.Conv2D(self.nf, (1, 1), (1, 1))
         #### reconstruction
         self.recon_trunk = module_util.Module(ResidualBlock_noBN_f, back_RBs)
         #### upsampling
-        self.upconv1 = keras.layers.Conv2D(nf * 4, (3, 3), (1, 1), "same")
+        self.upconv1 = keras.layers.Conv2D(self.nf * 4, (3, 3), (1, 1), "same")
         self.upconv2 = keras.layers.Conv2D(64 * 4, (3, 3), (1, 1), "same")
         self.pixel_shuffle = lambda x: tf.nn.depth_to_space(x, 2)
         self.HRconv = keras.layers.Conv2D(64, (3, 3), (1, 1), "same")
@@ -102,11 +101,7 @@ class EDVR(tf.keras.Model):
             L1_fea[:, self.center, :, :, :], L2_fea[:, self.center, :, :, :],
             L3_fea[:, self.center, :, :, :]
         ]
-        # aligned_fea = tf.TensorArray(dtype=tf.float32,
-        #                              size=0, dynamic_size=True,
-        #                              element_shape=[B, H, W, self.nf]) # TODO potential bug for deblurring task
         aligned_fea = tf.TensorArray(dtype=tf.float32, size=self.nframes)
-
 
         def cond(i, N, fea_col):
             return i < N
@@ -122,11 +117,6 @@ class EDVR(tf.keras.Model):
 
         _, _, aligned_fea = tf.while_loop(cond, body, [0, N, aligned_fea])
         aligned_fea = aligned_fea.stack() # [N, B, H, W, C]
-        # aligned_shape = tf.shape(aligned_fea) # TODO critical None dimension bug
-        # aligned_shape = aligned_fea.shape
-        # aligned_H, aligned_W, aligned_C = aligned_shape[2], aligned_shape[3], aligned_shape[4]
-        # aligned_fea = tf.reshape(aligned_fea, [self.nframes, B, aligned_H, aligned_W, aligned_C])
-
 
         # deprecated codes using static Graph mode
         # aligned_fea = []
