@@ -1,0 +1,1 @@
+python main.py --filter_num 32 --batch_size 4 --lr 5e-5
