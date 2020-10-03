@@ -1,3 +1,4 @@
+import os
 import time
 import datetime
 import numpy as np
@@ -15,17 +16,23 @@ class Trainer:
         self.batch_size = self.config["batch_size"]
         self.num_epoch = self.config["num_epoch"]
         self.lr = self.config["lr"]
+        self.beta1 = self.config["beta1"]
+        self.beta2 = self.config["beta2"]
 
         self.total_sample = self.config["total_sample"]
         self.num_step = (self.total_sample + self.batch_size - 1) // self.batch_size
 
         self.log_step = self.config["log_step"]
         self.log_epoch = self.config["log_epoch"]
+        self.log_block_size = self.config["log_block_size"]
         self.val_step = self.config["val_step"]
         self.model_save_step = self.config["model_save_step"]
 
-        self.model_save_path = self.config["model_save_path"]
+        # path
         self.log_path = self.config["log_path"]
+        self.log_train_path = os.path.join(self.log_path, config["log_train_path"])
+        self.log_val_path = os.path.join(self.log_path, config["log_val_path"])
+        self.model_save_path = self.config["model_save_path"]
 
 
         self.log_template = "Epoch: [%d/%d], Step: [%d/%d], time: %s/%s, loss: %.7f, psnr: %.4f, lr: %.2e"
@@ -37,7 +44,7 @@ class Trainer:
                                                                cross_device_ops=tf.distribute.NcclAllReduce())
             with self.mirrored_strategy.scope():
                 self.model = model(config)
-                self.optimizer = tf.optimizers.Adam(learning_rate=self.config["lr"])
+                self.optimizer = tf.optimizers.Adam(learning_rate=self.lr, beta_1=self.beta1, beta_2=self.beta2)
                 self.train_dataset, self.val_dataset, self.test_dataset = dataloader()
                 self.train_dataset = self.mirrored_strategy.experimental_distribute_dataset(self.train_dataset)
                 self.val_dataset = self.mirrored_strategy.experimental_distribute_dataset(self.val_dataset)
@@ -46,13 +53,22 @@ class Trainer:
         self.checkpoint = tf.train.Checkpoint(step=tf.Variable(0), optimizer=self.optimizer, model=self.model)
         self.manager = tf.train.CheckpointManager(self.checkpoint, self.model_save_path, max_to_keep=3)
 
-        if self.pretrained_model is True:
+        if self.pretrained_model is True: # TODO load step
             self.manager.restore_or_initialize()
             # print(self.manager.checkpoints) # checkpoints list
             # self.checkpoint.restore(tf.train.latest_checkpoint(self.model_save_path))
-            print(f"Restored from {self.manager.latest_checkpoint}")
+            cp.print_success(f"Restored from {self.manager.latest_checkpoint}")
 
-        self.summary_writer = tf.summary.create_file_writer(self.log_path)
+        self.train_summary_writer = tf.summary.create_file_writer(self.log_train_path)
+        self.val_summary_writer = tf.summary.create_file_writer(self.log_val_path)
+
+    def write_log(self, loss, psnr, logging):
+        with self.train_summary_writer.as_default():
+            block_id = self.total_step / self.log_block_size
+            start_step, end_step = block_id * self.log_block_size, (block_id + 1) * self.log_block_size
+            tf.summary.scalar("loss", loss, step=self.total_step)
+            tf.summary.scalar("psnr", psnr, step=self.total_step)
+            tf.summary.text(f"Step {start_step}~{end_step}", logging, step=self.total_step)
 
     def calc_psnr(self, pred, target, max_val=1.0): # TODO max_val
         psnr = tf.image.psnr(pred, target, max_val=max_val)
@@ -86,12 +102,14 @@ class Trainer:
         psnr = self.calc_psnr(y, predictions)
         return loss, psnr
 
+    @tf.function
     def multi_validate_step(self, x, y):
         loss, psnr = self.mirrored_strategy.run(self.validate_step, args=(x, y))
         mean_loss = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, loss, axis=None)
         mean_psnr = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, psnr, axis=None)
         return mean_loss, mean_psnr
 
+    @tf.function
     def multi_train_step(self, x, y):
         loss, psnr = self.mirrored_strategy.run(self.train_step, args=(x, y))
         mean_loss = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, loss, axis=None)
@@ -107,10 +125,9 @@ class Trainer:
         with self.mirrored_strategy.scope():
             for step, (batch_x, batch_y) in enumerate(self.train_dataset):
                 self.checkpoint.step.assign_add(1)
+                self.total_step += 1
                 # loss, psnr = self.train_step(batch_x, batch_y)
                 loss, psnr = self.multi_train_step(batch_x, batch_y)
-
-                elapsed, total_time = self.calc_time()
 
                 # values = [('train_loss',train_loss), ('train_acc'), train_acc]
                 # self.progbar.update(step * self.batch_size, values=values)
@@ -119,18 +136,19 @@ class Trainer:
                 psnr_list.append(psnr)
 
                 if step % self.log_step == 0:
-                    print(self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr))
-                    with self.summary_writer.as_default():
-                        tf.summary.scalar("train_loss epoch: " + str(epoch), loss, step=step)
-                        tf.summary.scalar("train_psnr epoch: " + str(epoch), psnr, step=step)
+                    elapsed, total_time = self.calc_time()
+                    logging = self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr)
+                    print(logging)
+                    self.write_log(loss, psnr, logging)
 
-                if step % self.val_step == 0: # TODO print color
+                if step % self.val_step == 0:
                     val_batch_x, val_batch_y = self.val_dataset.get_next()
                     val_loss, val_psnr = self.multi_validate_step(val_batch_x, val_batch_y)
-                    cp.print_success(self.val_template % (val_loss, val_psnr))
-                    with self.summary_writer.as_default():
-                        tf.summary.scalar("val_loss epoch: " + str(epoch), loss, step=step)
-                        tf.summary.scalar("val_psnr epoch: " + str(epoch), psnr, step=step)
+
+                    logging = self.val_template % (val_loss, val_psnr)
+                    cp.print_success(logging)
+                    self.write_log(loss, psnr, logging)
+
 
                 if step % self.model_save_step == 0:
                     self.manager.save()  # save checkpoint
@@ -141,7 +159,7 @@ class Trainer:
 
     def train(self):
         # self.progbar = Progbar(target=self.config["total_sample"], interval=self.config["log_sec"])
-
+        self.total_step = 0
         for epoch in range(1, self.num_epoch + 1):
             # print("epoch {}/{}".format(epoch, self.num_epoch))
             loss, acc = self.train_epoch(epoch)
