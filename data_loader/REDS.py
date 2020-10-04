@@ -15,6 +15,7 @@ class REDSDataLoader:
         self.batch_size = config["batch_size"]
         self.buffer_size = config["buffer_size"]
         self.prefetch_buffer_size = config["prefetch_buffer_size"]
+        self.shuffle_ratio = config["shuffle_ratio"]
 
         self.root_path = config["root_path"]
         self.train_path = os.path.join(self.root_path, 'train')
@@ -208,7 +209,7 @@ class REDSDataLoader:
 
         if type == "val":
             dataset = dataset.repeat()
-        dataset = dataset.shuffle(buffer_size=self.buffer_size)
+        dataset = dataset.shuffle(buffer_size=self.batch_size * self.shuffle_ratio)
         dataset = dataset.map(_load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         dataset = dataset.batch(batch_size=self.batch_size)
 

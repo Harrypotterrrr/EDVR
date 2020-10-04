@@ -67,7 +67,7 @@ class Trainer:
 
     def write_log(self, writer, loss, psnr, logging):
         with writer.as_default():
-            block_id = self.total_step / self.log_block_size
+            block_id = self.total_step // self.log_block_size
             start_step, end_step = block_id * self.log_block_size, (block_id + 1) * self.log_block_size
             tf.summary.scalar(f"loss/{self.version}", loss, step=self.total_step)
             tf.summary.scalar(f"psnr/{self.version}", psnr, step=self.total_step)

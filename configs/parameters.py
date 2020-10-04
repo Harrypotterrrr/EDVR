@@ -34,12 +34,11 @@ def get_parameters():
 
     # Misc
     parser.add_argument('--train', type=str2bool, default=True)
-    parser.add_argument('--parallel', type=str2bool, default=False)
     parser.add_argument('-g', '--gpus', default=['0', '1', '2', '3'], nargs='+', type=str, help='Specify GPU ids.')
     parser.add_argument('--dataset', type=str, default='reds', choices=['reds', 'vimeo'])
     parser.add_argument('--use_tensorboard', type=str2bool, default=False)
-    parser.add_argument('--test_batch_size', type=int, default=8, help='how many batchsize for test and sample')
-    parser.add_argument('--buffer_size', type=int, default=32)
+    parser.add_argument('--shuffle_ratio', type=int, default=20)
+    parser.add_argument('--buffer_size', type=int, default=32) # TODO potential shuffle insufficiently bug
     parser.add_argument('--prefetch_buffer_size', type=int, default=32)
 
     # Path
