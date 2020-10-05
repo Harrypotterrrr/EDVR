@@ -14,9 +14,11 @@ class Trainer:
         self.pretrained_model = self.config["pretrained_model"]
         self.version = self.config["version"]
 
+        # training setting
         self.batch_size = self.config["batch_size"]
         self.num_epoch = self.config["num_epoch"]
         self.lr = self.config["lr"]
+        self.lr_schr = self.config["lr_schr"]
         self.beta1 = self.config["beta1"]
         self.beta2 = self.config["beta2"]
 
@@ -33,12 +35,13 @@ class Trainer:
         self.log_path = self.config["log_path"]
         self.log_train_path = os.path.join(self.log_path, config["log_train_path"])
         self.log_val_path = os.path.join(self.log_path, config["log_val_path"])
-        self.model_save_path = self.config["model_save_path"]
-
+        self.model_save_path = os.path.join(self.config["model_save_path"], self.config["version"])
 
         self.log_template = "Epoch: [%d/%d], Step: [%d/%d], time: %s/%s, loss: %.7f, psnr: %.4f, lr: %.2e"
         self.val_template = "Validation, val_loss: %.7f, val_psnr: %.4f"
         self.total_time = 0
+
+        learning_rate_fn = self.init_lr()
 
         if self.config['gpus']:
             gpu_list = [f"/gpu:{i}" for i in range(len(self.config['gpus']))]
@@ -47,7 +50,7 @@ class Trainer:
                                                                cross_device_ops=tf.distribute.NcclAllReduce())
             with self.mirrored_strategy.scope():
                 self.model = model(config)
-                self.optimizer = tf.optimizers.Adam(learning_rate=self.lr, beta_1=self.beta1, beta_2=self.beta2)
+                self.optimizer = tf.optimizers.Adam(learning_rate=learning_rate_fn, beta_1=self.beta1, beta_2=self.beta2)
                 self.train_dataset, self.val_dataset, self.test_dataset = dataloader()
                 self.train_dataset = self.mirrored_strategy.experimental_distribute_dataset(self.train_dataset)
                 self.val_dataset = self.mirrored_strategy.experimental_distribute_dataset(self.val_dataset)
@@ -72,6 +75,24 @@ class Trainer:
             tf.summary.scalar(f"loss/{self.version}", loss, step=self.total_step)
             tf.summary.scalar(f"psnr/{self.version}", psnr, step=self.total_step)
             tf.summary.text(f"{self.version}/Step {start_step}~{end_step}", logging, step=self.total_step)
+
+    def init_lr(self):
+        if self.lr_schr == "const":
+            learning_rate_fn = self.lr
+        elif self.lr_schr == "exp":
+            learning_rate_fn = tf.keras.optimizers.schedules.ExponentialDecay(
+                self.lr,
+                decay_steps=self.config["lr_exp_step"],
+                decay_rate=self.config["lr_exp_decay"],
+                staircase=True
+            )
+        elif self.lr_schr == "step":
+            learning_rate_fn = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
+                boundaries=self.config["lr_boundary"],
+                values=self.config["lr_boundary_value"],
+            )
+
+        return learning_rate_fn
 
     def calc_psnr(self, pred, target, max_val=1.0): # TODO max_val
         psnr = tf.image.psnr(pred, target, max_val=max_val)
@@ -140,7 +161,8 @@ class Trainer:
 
                 if step % self.log_step == 0:
                     elapsed, total_time = self.calc_time()
-                    logging = self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, self.lr)
+                    current_lr = self.optimizer._decayed_lr(tf.float32)
+                    logging = self.log_template % (epoch, self.num_epoch, step, self.num_step, elapsed, total_time, loss, psnr, current_lr)
                     print(logging)
                     self.write_log(self.train_summary_writer, loss, psnr, logging)
 
@@ -151,7 +173,6 @@ class Trainer:
                     logging = self.val_template % (val_loss, val_psnr)
                     cp.print_success(logging)
                     self.write_log(self.val_summary_writer, val_loss, val_psnr, logging)
-
 
                 if step % self.model_save_step == 0:
                     self.manager.save()  # save checkpoint

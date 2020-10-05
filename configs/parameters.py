@@ -20,12 +20,18 @@ def get_parameters():
     parser.add_argument('--num_epoch', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=4e-4)
-    parser.add_argument('--lr_decay', type=float, default=0.9999)
-    parser.add_argument('--lr_schr', type=str, default='const', choices=['const', 'step', 'exp', 'multi', 'reduce'])
     parser.add_argument('--beta1', type=float, default=0.9)
     parser.add_argument('--beta2', type=float, default=0.999)
     parser.add_argument('--alpha', type=float, default=0.45)
     parser.add_argument('--epsilon', type=float, default=1e-3)
+
+    # Learning rate scheduler
+    parser.add_argument('--lr_schr', type=str, default='const', choices=['const', 'exp', 'step', 'multi', 'reduce'])
+    parser.add_argument('--lr_exp_step', type=float, default=1000)
+    parser.add_argument('--lr_exp_decay', type=float, default=0.95)
+    parser.add_argument('--lr_boundary', default=[2000, 6000, 8000], nargs='+', type=float, help='lr constant decay boundary')
+    parser.add_argument('--lr_boundary_value', default=[4e-4, 1e-4, 5e-5], nargs='+', type=float, help='lr constant value of decay boundary')
+
 
     # parser.add_argument('--total_sample', type=int, default=24000)
 
