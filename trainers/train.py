@@ -22,6 +22,7 @@ class Trainer:
         self.beta1 = self.config["beta1"]
         self.beta2 = self.config["beta2"]
 
+        self.center = self.config["nframes"] // 2
         self.total_sample = self.config["total_sample"]
         self.num_step = (self.total_sample + self.batch_size - 1) // self.batch_size
 
@@ -29,6 +30,7 @@ class Trainer:
         self.log_epoch = self.config["log_epoch"]
         self.log_block_size = self.config["log_block_size"]
         self.val_step = self.config["val_step"]
+        self.sample_step = self.config["sample_step"]
         self.model_save_step = self.config["model_save_step"]
 
         # path
@@ -67,6 +69,17 @@ class Trainer:
 
         self.train_summary_writer = tf.summary.create_file_writer(self.log_train_path)
         self.val_summary_writer = tf.summary.create_file_writer(self.log_val_path)
+
+    def write_img(self, writer, sample_x, preds, sampel_y):
+        sample_x = sample_x.values
+        preds = preds.values
+        sampel_y = sampel_y.values
+        with writer.as_default():
+            for i, (x, pred, y) in enumerate(zip(sample_x, preds, sampel_y)):
+                x = x[:, self.center,:,:,:]
+                tf.summary.image(f"Step {self.total_step}/{self.version}/No.{i}/input", x, step=self.total_step)
+                tf.summary.image(f"Step {self.total_step}/{self.version}/No.{i}/pred", pred, step=self.total_step)
+                tf.summary.image(f"Step {self.total_step}/{self.version}/No.{i}/target", y, step=self.total_step)
 
     def write_log(self, writer, loss, psnr, logging):
         with writer.as_default():
@@ -124,14 +137,14 @@ class Trainer:
         predictions = self.model(x)
         loss = self.model.loss_object(y, predictions)
         psnr = self.calc_psnr(y, predictions)
-        return loss, psnr
+        return loss, psnr, predictions
 
     @tf.function
     def multi_validate_step(self, x, y):
-        loss, psnr = self.mirrored_strategy.run(self.validate_step, args=(x, y))
+        loss, psnr, preds = self.mirrored_strategy.run(self.validate_step, args=(x, y))
         mean_loss = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, loss, axis=None)
         mean_psnr = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, psnr, axis=None)
-        return mean_loss, mean_psnr
+        return mean_loss, mean_psnr, preds
 
     @tf.function
     def multi_train_step(self, x, y):
@@ -168,11 +181,13 @@ class Trainer:
 
                 if step % self.val_step == 0:
                     val_batch_x, val_batch_y = self.val_dataset.get_next()
-                    val_loss, val_psnr = self.multi_validate_step(val_batch_x, val_batch_y)
-
+                    val_loss, val_psnr, preds = self.multi_validate_step(val_batch_x, val_batch_y)
                     logging = self.val_template % (val_loss, val_psnr)
                     cp.print_success(logging)
                     self.write_log(self.val_summary_writer, val_loss, val_psnr, logging)
+
+                    if step % self.sample_step == 0:
+                        self.write_img(self.val_summary_writer, val_batch_x, preds, val_batch_y)
 
                 if step % self.model_save_step == 0:
                     self.manager.save()  # save checkpoint

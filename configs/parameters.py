@@ -58,6 +58,7 @@ def get_parameters():
     # Loop
     parser.add_argument('--log_step', type=int, default=1)
     parser.add_argument('--val_step', type=int, default=5)
+    parser.add_argument('--sample_step', type=int, default=1)
     parser.add_argument('--log_block_size', type=int, default=100)
     parser.add_argument('--log_epoch', type=int, default=1)
     parser.add_argument('--log_sec', type=int, default=5)
