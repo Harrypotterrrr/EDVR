@@ -15,6 +15,9 @@ def get_parameters():
     # Network settings
     parser.add_argument('--nframes', type=int, default=5)
     parser.add_argument('--filter_num', type=int, default=128)
+    parser.add_argument('--front_rb', type=int, default=5)
+    parser.add_argument('--back_rb', type=int, default=40)
+    parser.add_argument('--deform_groups', type=int, default=8)
 
     # Training setting
     parser.add_argument('--num_epoch', type=int, default=100)
@@ -22,7 +25,7 @@ def get_parameters():
     parser.add_argument('--lr', type=float, default=4e-4)
     parser.add_argument('--beta1', type=float, default=0.9)
     parser.add_argument('--beta2', type=float, default=0.999)
-    parser.add_argument('--alpha', type=float, default=0.45)
+    parser.add_argument('--alpha', type=float, default=0.5)
     parser.add_argument('--epsilon', type=float, default=1e-3)
 
     # Learning rate scheduler
@@ -31,7 +34,6 @@ def get_parameters():
     parser.add_argument('--lr_exp_decay', type=float, default=0.95)
     parser.add_argument('--lr_boundary', default=[2000, 6000, 8000], nargs='+', type=float, help='lr constant decay boundary')
     parser.add_argument('--lr_boundary_value', default=[4e-4, 1e-4, 5e-5], nargs='+', type=float, help='lr constant value of decay boundary')
-
 
     # parser.add_argument('--total_sample', type=int, default=24000)
 
@@ -42,7 +44,6 @@ def get_parameters():
     parser.add_argument('--train', type=str2bool, default=True)
     parser.add_argument('-g', '--gpus', default=['0', '1', '2', '3'], nargs='+', type=str, help='Specify GPU ids.')
     parser.add_argument('--dataset', type=str, default='reds', choices=['reds', 'vimeo'])
-    parser.add_argument('--use_tensorboard', type=str2bool, default=False)
     parser.add_argument('--shuffle_ratio', type=int, default=20)
     parser.add_argument('--buffer_size', type=int, default=32) # TODO potential shuffle insufficiently bug
     parser.add_argument('--prefetch_buffer_size', type=int, default=32)
@@ -57,8 +58,8 @@ def get_parameters():
 
     # Loop
     parser.add_argument('--log_step', type=int, default=1)
-    parser.add_argument('--val_step', type=int, default=5)
-    parser.add_argument('--sample_step', type=int, default=1)
+    parser.add_argument('--val_step', type=int, default=20)
+    parser.add_argument('--sample_step', type=int, default=100)
     parser.add_argument('--log_block_size', type=int, default=100)
     parser.add_argument('--log_epoch', type=int, default=1)
     parser.add_argument('--log_sec', type=int, default=5)
