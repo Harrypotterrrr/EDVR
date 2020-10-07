@@ -37,6 +37,7 @@ class Trainer:
         self.log_path = self.config["log_path"]
         self.log_train_path = os.path.join(self.log_path, config["log_train_path"])
         self.log_val_path = os.path.join(self.log_path, config["log_val_path"])
+        self.image_log_path = os.path.join(self.log_path, config["version"])
         self.model_save_path = os.path.join(self.config["model_save_path"], self.config["version"])
 
         self.log_template = "Epoch: [%d/%d], Step: [%d/%d], time: %s/%s, loss: %.7f, psnr: %.4f, lr: %.2e"
@@ -69,17 +70,20 @@ class Trainer:
 
         self.train_summary_writer = tf.summary.create_file_writer(self.log_train_path)
         self.val_summary_writer = tf.summary.create_file_writer(self.log_val_path)
+        self.image_writer = tf.summary.create_file_writer(self.image_log_path)
 
     def write_img(self, writer, sample_x, preds, sampel_y):
         sample_x = sample_x.values
         preds = preds.values
         sampel_y = sampel_y.values
+        cp.print_success(f"Saving output saved to tensorboard at Step: {self.total_step}...")
         with writer.as_default():
             for i, (x, pred, y) in enumerate(zip(sample_x, preds, sampel_y)):
                 x = x[:, self.center,:,:,:]
-                tf.summary.image(f"Step {self.total_step}/{self.version}/No.{i}/input", x, step=self.total_step)
-                tf.summary.image(f"Step {self.total_step}/{self.version}/No.{i}/pred", pred, step=self.total_step)
-                tf.summary.image(f"Step {self.total_step}/{self.version}/No.{i}/target", y, step=self.total_step)
+                tf.summary.image(f"Step {self.total_step}/No.{i}/input", x, step=self.total_step)
+                tf.summary.image(f"Step {self.total_step}/No.{i}/pred", pred, step=self.total_step)
+                tf.summary.image(f"Step {self.total_step}/No.{i}/target", y, step=self.total_step)
+                break # TODO unsolved bug
 
     def write_log(self, writer, loss, psnr, logging):
         with writer.as_default():
@@ -187,7 +191,7 @@ class Trainer:
                     self.write_log(self.val_summary_writer, val_loss, val_psnr, logging)
 
                     if step % self.sample_step == 0:
-                        self.write_img(self.val_summary_writer, val_batch_x, preds, val_batch_y)
+                        self.write_img(self.image_writer, val_batch_x, preds, val_batch_y)
 
                 if step % self.model_save_step == 0:
                     self.manager.save()  # save checkpoint
