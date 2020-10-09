@@ -10,11 +10,14 @@ from models.Predeblur import Predeblur_ResNet_Pyramid
 
 class EDVR(tf.keras.Model):
 
-    def __init__(self, config=None, groups=8, front_RBs=5, back_RBs=10, predeblur=False, HR_in=False, w_TSA=True):
-        super(EDVR, self).__init__() # TODO front_RBs, back_RBs
+    def __init__(self, config=None, predeblur=False, HR_in=False, w_TSA=True):
+        super(EDVR, self).__init__()
 
         self.config = config
         self.nframes = config["nframes"]
+        self.front_rb = config["front_rb"]
+        self.back_rb = config["back_rb"]
+        self.deform_groups = config["self.deform_groups"]
 
         self.loss_object = self.charbonnier_loss
         self.nf = config["filter_num"]
@@ -35,18 +38,18 @@ class EDVR(tf.keras.Model):
                 self.conv_first_3 = keras.layers.Conv2D(self.nf, (3, 3), strides=(2, 2), padding="same", use_bias=True)
             else:
                 self.conv_first = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same", use_bias=True)
-        self.feature_extraction = module_util.Module(ResidualBlock_noBN_f, front_RBs)
+        self.feature_extraction = module_util.Module(ResidualBlock_noBN_f, self.front_rb)
         self.fea_L2_conv1 = keras.layers.Conv2D(self.nf, (3, 3), (2, 2), "same")
         self.fea_L2_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
         self.fea_L3_conv1 = keras.layers.Conv2D(self.nf, (3, 3), (2, 2), "same")
         self.fea_L3_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
-        self.pcd_align = PCD_Align(nf=self.nf, groups=groups)
+        self.pcd_align = PCD_Align(nf=self.nf, groups=self.deform_groups)
         if self.w_TSA:
             self.tsa_fusion = TSA_Fusion(nf=self.nf, nframes=self.nf, center=self.center)
         else:
             self.tsa_fusion = keras.layers.Conv2D(self.nf, (1, 1), (1, 1))
         #### reconstruction
-        self.recon_trunk = module_util.Module(ResidualBlock_noBN_f, back_RBs)
+        self.recon_trunk = module_util.Module(ResidualBlock_noBN_f, self.back_rb)
         #### upsampling
         self.upconv1 = keras.layers.Conv2D(self.nf * 4, (3, 3), (1, 1), "same")
         self.upconv2 = keras.layers.Conv2D(64 * 4, (3, 3), (1, 1), "same")
@@ -117,19 +120,6 @@ class EDVR(tf.keras.Model):
 
         _, _, aligned_fea = tf.while_loop(cond, body, [0, N, aligned_fea])
         aligned_fea = aligned_fea.stack() # [N, B, H, W, C]
-
-        # deprecated codes using static Graph mode
-        # aligned_fea = []
-        # for i in range(N):
-        #     nbr_fea_l = [
-        #         L1_fea[:, i, :, :, :],
-        #         L2_fea[:, i, :, :, :],
-        #         L3_fea[:, i, :, :, :]
-        #     ]
-        #     aligned_fea.append(self.pcd_align(nbr_fea_l, ref_fea_l))
-        #
-        # aligned_fea = tf.stack(aligned_fea) # [N, B, H, W, C]
-
         aligned_fea = tf.transpose(aligned_fea, [1, 0, 2, 3, 4])  # [B, N, H, W, C]
 
         if not self.w_TSA:
@@ -150,7 +140,8 @@ class EDVR(tf.keras.Model):
         return out
 
     def charbonnier_loss(self, x, y):
-        return tf.reduce_mean(tf.pow(tf.square(x - y) + tf.square(self.config["epsilon"]), self.config["alpha"]))
+        loss = tf.reduce_mean(tf.pow(tf.square(x - y) + tf.square(self.config["epsilon"]), self.config["alpha"]))
+        return loss
 
 
 if __name__ == "__main__":
