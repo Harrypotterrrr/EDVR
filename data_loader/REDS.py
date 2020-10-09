@@ -100,7 +100,15 @@ class REDSDataLoader:
         self.dataset = self.dataset.shuffle(len(self.dataset))
         self.dataset = self.dataset.map(load_image).batch(self.batch_size)
 
-    def build_tfrecord(self, type, x_paths, y_paths=""):
+    def build_tfrecord(self, type, x_paths, y_paths=None):
+
+        x_paths = np.asarray(x_paths)
+        random_indices = np.arange(len(x_paths)) # Add previous shuffle
+        np.random.shuffle(random_indices)
+        x_paths = x_paths[random_indices]
+        if y_paths:
+            y_paths = np.asarray(y_paths)
+            y_paths = y_paths[random_indices]
 
         with tf.io.TFRecordWriter(f"{self.tfrecord_path}_{type}") as writer:
             if type == "test":
