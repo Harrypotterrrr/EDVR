@@ -72,17 +72,19 @@ class Trainer:
         self.val_summary_writer = tf.summary.create_file_writer(self.log_val_path)
         self.image_writer = tf.summary.create_file_writer(self.image_log_path)
 
-    def write_img(self, writer, sample_x, preds, sampel_y):
+    def write_img(self, writer, sample_x, preds, sampel_y, out):
         sample_x = sample_x.values
         preds = preds.values
         sampel_y = sampel_y.values
-        cp.print_success(f"Saving output saved to tensorboard at Step: {self.total_step}...")
+        out = out.values
+        cp.print_success(f"Saving output to tensorboard at Step: {self.total_step}...")
         with writer.as_default():
-            for i, (x, pred, y) in enumerate(zip(sample_x, preds, sampel_y)):
+            for i, (x, pred, y, _out) in enumerate(zip(sample_x, preds, sampel_y, out)):
                 x = x[:, self.center,:,:,:]
                 tf.summary.image(f"Step {self.total_step}/No.{i}/input", x, step=self.total_step)
                 tf.summary.image(f"Step {self.total_step}/No.{i}/pred", pred, step=self.total_step)
                 tf.summary.image(f"Step {self.total_step}/No.{i}/target", y, step=self.total_step)
+                tf.summary.image(f"Step {self.total_step}/No.{i}/out", _out, step=self.total_step)
                 break # TODO unsolved bug
 
     def write_log(self, writer, loss, psnr, logging):
@@ -127,7 +129,7 @@ class Trainer:
     @tf.function
     def train_step(self, x, y):
         with tf.GradientTape() as tape:
-            predictions = self.model(x)
+            predictions, _ = self.model(x)
             loss = self.model.loss_object(y, predictions)
 
         gradients = tape.gradient(loss, self.model.trainable_variables)
@@ -138,17 +140,17 @@ class Trainer:
 
     @tf.function
     def validate_step(self, x, y):
-        predictions = self.model(x)
+        predictions, out = self.model(x)
         loss = self.model.loss_object(y, predictions)
         psnr = self.calc_psnr(y, predictions)
-        return loss, psnr, predictions
+        return loss, psnr, predictions, out
 
     @tf.function
     def multi_validate_step(self, x, y):
-        loss, psnr, preds = self.mirrored_strategy.run(self.validate_step, args=(x, y))
+        loss, psnr, preds, out = self.mirrored_strategy.run(self.validate_step, args=(x, y))
         mean_loss = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, loss, axis=None)
         mean_psnr = self.mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, psnr, axis=None)
-        return mean_loss, mean_psnr, preds
+        return mean_loss, mean_psnr, preds, out
 
     @tf.function
     def multi_train_step(self, x, y):
@@ -161,12 +163,11 @@ class Trainer:
 
         loss_list = []
         psnr_list = []
-        cp.print_message("Start training...")
         self.start_time = time.time()
+
         with self.mirrored_strategy.scope():
             for step, (batch_x, batch_y) in enumerate(self.train_dataset):
                 self.checkpoint.step.assign_add(1)
-                self.total_step += 1
                 # loss, psnr = self.train_step(batch_x, batch_y)
                 loss, psnr = self.multi_train_step(batch_x, batch_y)
 
@@ -185,16 +186,18 @@ class Trainer:
 
                 if step % self.val_step == 0:
                     val_batch_x, val_batch_y = self.val_dataset.get_next()
-                    val_loss, val_psnr, preds = self.multi_validate_step(val_batch_x, val_batch_y)
+                    val_loss, val_psnr, preds, out = self.multi_validate_step(val_batch_x, val_batch_y)
                     logging = self.val_template % (val_loss, val_psnr)
                     cp.print_success(logging)
                     self.write_log(self.val_summary_writer, val_loss, val_psnr, logging)
 
                     if step % self.sample_step == 0:
-                        self.write_img(self.image_writer, val_batch_x, preds, val_batch_y)
+                        self.write_img(self.image_writer, val_batch_x, preds, val_batch_y, out)
 
                 if step % self.model_save_step == 0:
                     self.manager.save()  # save checkpoint
+
+                self.total_step += 1
 
         loss = np.mean(loss_list)
         psnr = np.mean(psnr_list)
@@ -203,6 +206,7 @@ class Trainer:
     def train(self):
         # self.progbar = Progbar(target=self.config["total_sample"], interval=self.config["log_sec"])
         self.total_step = 0
+        cp.print_message("Start training...")
         for epoch in range(1, self.num_epoch + 1):
             # print("epoch {}/{}".format(epoch, self.num_epoch))
             loss, acc = self.train_epoch(epoch)

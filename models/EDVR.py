@@ -17,7 +17,7 @@ class EDVR(tf.keras.Model):
         self.nframes = config["nframes"]
         self.front_rb = config["front_rb"]
         self.back_rb = config["back_rb"]
-        self.deform_groups = config["self.deform_groups"]
+        self.deform_groups = config["deform_groups"]
 
         self.loss_object = self.charbonnier_loss
         self.nf = config["filter_num"]
@@ -136,8 +136,8 @@ class EDVR(tf.keras.Model):
         else:
             x_center_shape = tf.shape(x_center)
             base = tf.image.resize(x_center, [4 * x_center_shape[1], 4 * x_center_shape[2]])
-        out = tf.add(out, base)
-        return out
+        y = tf.add(out, base)
+        return y, out
 
     def charbonnier_loss(self, x, y):
         loss = tf.reduce_mean(tf.pow(tf.square(x - y) + tf.square(self.config["epsilon"]), self.config["alpha"]))
