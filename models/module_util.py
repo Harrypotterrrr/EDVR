@@ -1,12 +1,15 @@
 import tensorflow as tf
 from tensorflow import keras
-# from tensorflow.contrib import image
 
 
-class ResidualBlock_noBN():
+class ResidualBlock_noBN(tf.keras.Model):
     def __init__(self, nf=64):
-        self.conv1 = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same")
-        self.conv2 = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same")
+        super(ResidualBlock_noBN, self).__init__()
+
+        self.conv1 = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same",
+                            kernel_initializer=tf.keras.initializers.HeNormal())
+        self.conv2 = keras.layers.Conv2D(nf, (3, 3), (1, 1), "same",
+                            kernel_initializer=tf.keras.initializers.HeNormal())
         self.relu = keras.layers.ReLU()
 
     def __call__(self, x):
@@ -15,8 +18,9 @@ class ResidualBlock_noBN():
         out = self.conv2(out)
         return identify + out
 
-class Module():
+class Module(tf.keras.Model):
     def __init__(self, block, n_layers):
+        super(Module, self).__init__()
         self.n_layers = n_layers
         self.block = block()
     def __call__(self, x):
