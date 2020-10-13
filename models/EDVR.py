@@ -10,21 +10,25 @@ from models.Predeblur import Predeblur_ResNet_Pyramid
 
 class EDVR(tf.keras.Model):
 
-    def __init__(self, config=None, predeblur=False, HR_in=False, w_TSA=True):
+    def __init__(self, config=None):
         super(EDVR, self).__init__()
 
         self.config = config
+
+        # Network settings
+        self.nf = config["filter_num"]
+        self.center = config["nframes"] // 2
+        self.w_TSA = config["w_TSA"]
+        self.w_PCD = config["w_PCD"]
+        self.is_predeblur = config["predeblur"]
+        self.HR_in = config["HR_in"]
         self.nframes = config["nframes"]
         self.front_rb = config["front_rb"]
         self.back_rb = config["back_rb"]
         self.deform_groups = config["deform_groups"]
 
         self.loss_object = self.charbonnier_loss
-        self.nf = config["filter_num"]
-        self.center = config["nframes"] // 2
-        self.is_predeblur = True if predeblur else False
-        self.HR_in = True if HR_in else False
-        self.w_TSA = w_TSA
+
         ResidualBlock_noBN_f = functools.partial(module_util.ResidualBlock_noBN, nf=self.nf)
 
         #### extract features (for each frame)
@@ -33,11 +37,11 @@ class EDVR(tf.keras.Model):
             self.conv_1x1 = keras.layers.Conv2D(self.nf, (1, 1), (1, 1))
         else:
             if self.HR_in:
-                self.conv_first_1 = keras.layers.Conv2D(self.nf, (3, 3), strides=(1, 1), padding="same", use_bias=True)
-                self.conv_first_2 = keras.layers.Conv2D(self.nf, (3, 3), strides=(2, 2), padding="same", use_bias=True)
-                self.conv_first_3 = keras.layers.Conv2D(self.nf, (3, 3), strides=(2, 2), padding="same", use_bias=True)
+                self.conv_first_1 = keras.layers.Conv2D(self.nf, (3, 3), strides=(1, 1), padding="same")
+                self.conv_first_2 = keras.layers.Conv2D(self.nf, (3, 3), strides=(2, 2), padding="same")
+                self.conv_first_3 = keras.layers.Conv2D(self.nf, (3, 3), strides=(2, 2), padding="same")
             else:
-                self.conv_first = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same", use_bias=True)
+                self.conv_first = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
         self.feature_extraction = module_util.Module(ResidualBlock_noBN_f, self.front_rb)
         self.fea_L2_conv1 = keras.layers.Conv2D(self.nf, (3, 3), (2, 2), "same")
         self.fea_L2_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
@@ -45,7 +49,7 @@ class EDVR(tf.keras.Model):
         self.fea_L3_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
         self.pcd_align = PCD_Align(nf=self.nf, groups=self.deform_groups)
         if self.w_TSA:
-            self.tsa_fusion = TSA_Fusion(nf=self.nf, nframes=self.nf, center=self.center)
+            self.tsa_fusion = TSA_Fusion(nf=self.nf, nframes=self.nframes, center=self.center) # TODO potential bug
         else:
             self.tsa_fusion = keras.layers.Conv2D(self.nf, (1, 1), (1, 1))
         #### reconstruction
@@ -123,14 +127,18 @@ class EDVR(tf.keras.Model):
         aligned_fea = tf.transpose(aligned_fea, [1, 0, 2, 3, 4])  # [B, N, H, W, C]
 
         if not self.w_TSA:
-            aligned_fea = aligned_fea.view(B, -1, H, W)
+            aligned_fea = tf.transpose(aligned_fea, [0, 2, 3, 1, 4])  # [B, H, W, N, C]
+            aligned_fea = tf.reshape(aligned_fea, [B, H, W, -1])
         fea = self.tsa_fusion(aligned_fea)
 
         out = self.recon_trunk(fea)
+
         out = self.lrelu(self.pixel_shuffle(self.upconv1(out)))
         out = self.lrelu(self.pixel_shuffle(self.upconv2(out)))
         out = self.lrelu(self.HRconv(out))
+
         out = self.conv_last(out)
+
         if self.HR_in:
             base = x_center
         else:
