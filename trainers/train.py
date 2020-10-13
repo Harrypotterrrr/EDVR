@@ -72,20 +72,34 @@ class Trainer:
         self.val_summary_writer = tf.summary.create_file_writer(self.log_val_path)
         self.image_writer = tf.summary.create_file_writer(self.image_log_path)
 
+        # cp.print_success(self.model.summary())
+
     def write_img(self, writer, sample_x, preds, sampel_y, out):
-        sample_x = sample_x.values
-        preds = preds.values
-        sampel_y = sampel_y.values
-        out = out.values
+
         cp.print_success(f"Saving output to tensorboard at Step: {self.total_step}...")
         with writer.as_default():
-            for i, (x, pred, y, _out) in enumerate(zip(sample_x, preds, sampel_y, out)):
-                x = x[:, self.center,:,:,:]
-                tf.summary.image(f"Step {self.total_step}/No.{i}/input", x, step=self.total_step)
-                tf.summary.image(f"Step {self.total_step}/No.{i}/pred", pred, step=self.total_step)
-                tf.summary.image(f"Step {self.total_step}/No.{i}/target", y, step=self.total_step)
-                tf.summary.image(f"Step {self.total_step}/No.{i}/out", _out, step=self.total_step)
-                break # TODO unsolved bug
+            if len(self.config['gpus']) > 1: # TODO change to gpus parallel etc.
+                sample_x = sample_x.values
+                preds = preds.values
+                sampel_y = sampel_y.values
+                out = out.values
+                for i, (x, pred, y, _out) in enumerate(zip(sample_x, preds, sampel_y, out)):
+                    if len(x.shape) == 5:
+                        x = x[:, self.center, :, :, :]
+                    else:
+                        x = tf.expand_dims(x[self.center,:,:,:], axis=0)
+                        y = tf.expand_dims(y, axis=0)
+                    tf.summary.image(f"Step {self.total_step}/No.{i}/input", x, step=self.total_step)
+                    tf.summary.image(f"Step {self.total_step}/No.{i}/pred", pred, step=self.total_step)
+                    tf.summary.image(f"Step {self.total_step}/No.{i}/target", y, step=self.total_step)
+                    tf.summary.image(f"Step {self.total_step}/No.{i}/out", _out, step=self.total_step)
+                    break # TODO unsolved bug
+            else:
+                sample_x = sample_x[:, self.center, :, :, :]
+                tf.summary.image(f"Step {self.total_step}/input", sample_x, step=self.total_step)
+                tf.summary.image(f"Step {self.total_step}/pred", preds, step=self.total_step)
+                tf.summary.image(f"Step {self.total_step}/target", sampel_y, step=self.total_step)
+                tf.summary.image(f"Step {self.total_step}/out", out, step=self.total_step)
 
     def write_log(self, writer, loss, psnr, logging):
         with writer.as_default():
@@ -169,6 +183,7 @@ class Trainer:
             for step, (batch_x, batch_y) in enumerate(self.train_dataset):
                 self.checkpoint.step.assign_add(1)
                 # loss, psnr = self.train_step(batch_x, batch_y)
+
                 loss, psnr = self.multi_train_step(batch_x, batch_y)
 
                 # values = [('train_loss',train_loss), ('train_acc'), train_acc]
