@@ -27,7 +27,10 @@ class EDVR(tf.keras.Model):
         self.back_rb = config["back_rb"]
         self.deform_groups = config["deform_groups"]
 
-        self.loss_object = self.charbonnier_loss
+        if config["loss_fn"] == "mean":
+            self.loss_object = self.charbonnier_mean_loss
+        else:
+            self.loss_object = self.charbonnier_sum_loss
 
         ResidualBlock_noBN_f = functools.partial(module_util.ResidualBlock_noBN, nf=self.nf)
 
@@ -43,11 +46,14 @@ class EDVR(tf.keras.Model):
             else:
                 self.conv_first = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
         self.feature_extraction = module_util.Module(ResidualBlock_noBN_f, self.front_rb)
-        self.fea_L2_conv1 = keras.layers.Conv2D(self.nf, (3, 3), (2, 2), "same")
-        self.fea_L2_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
-        self.fea_L3_conv1 = keras.layers.Conv2D(self.nf, (3, 3), (2, 2), "same")
-        self.fea_L3_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
-        self.pcd_align = PCD_Align(nf=self.nf, groups=self.deform_groups)
+
+        if self.w_PCD:
+            self.fea_L2_conv1 = keras.layers.Conv2D(self.nf, (3, 3), (2, 2), "same")
+            self.fea_L2_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
+            self.fea_L3_conv1 = keras.layers.Conv2D(self.nf, (3, 3), (2, 2), "same")
+            self.fea_L3_conv2 = keras.layers.Conv2D(self.nf, (3, 3), (1, 1), "same")
+            self.pcd_align = PCD_Align(nf=self.nf, groups=self.deform_groups)
+
         if self.w_TSA:
             self.tsa_fusion = TSA_Fusion(nf=self.nf, nframes=self.nframes, center=self.center) # TODO potential bug
         else:
@@ -62,6 +68,7 @@ class EDVR(tf.keras.Model):
         self.conv_last = keras.layers.Conv2D(3, (3, 3), (1, 1), "same")
         #### activation function
         self.lrelu = keras.layers.LeakyReLU(0.1)
+
 
     def __call__(self, x):
 
@@ -92,39 +99,43 @@ class EDVR(tf.keras.Model):
                 L1_fea = self.lrelu(self.conv_first(tf.reshape(x, [-1, H, W, C])))
         L1_fea = self.feature_extraction(L1_fea)
 
-        # L2
-        L2_fea = self.lrelu(self.fea_L2_conv1(L1_fea))
-        L2_fea = self.lrelu(self.fea_L2_conv2(L2_fea))
-        # L3
-        L3_fea = self.lrelu(self.fea_L3_conv1(L2_fea))
-        L3_fea = self.lrelu(self.fea_L3_conv2(L3_fea))
+        if self.w_PCD:
+            # L2
+            L2_fea = self.lrelu(self.fea_L2_conv1(L1_fea))
+            L2_fea = self.lrelu(self.fea_L2_conv2(L2_fea))
+            # L3
+            L3_fea = self.lrelu(self.fea_L3_conv1(L2_fea))
+            L3_fea = self.lrelu(self.fea_L3_conv2(L3_fea))
 
-        L1_fea = tf.reshape(L1_fea, [B, N, H, W, -1])
-        L2_fea = tf.reshape(L2_fea, [B, N, H // 2, W // 2, -1])
-        L3_fea = tf.reshape(L3_fea, [B, N, H // 4, W // 4, -1])
+            L1_fea = tf.reshape(L1_fea, [B, N, H, W, -1])
+            L2_fea = tf.reshape(L2_fea, [B, N, H // 2, W // 2, -1])
+            L3_fea = tf.reshape(L3_fea, [B, N, H // 4, W // 4, -1])
 
-        #### pcd align
-        ref_fea_l = [
-            L1_fea[:, self.center, :, :, :], L2_fea[:, self.center, :, :, :],
-            L3_fea[:, self.center, :, :, :]
-        ]
-        aligned_fea = tf.TensorArray(dtype=tf.float32, size=self.nframes)
-
-        def cond(i, N, fea_col):
-            return i < N
-
-        def body(i, N, fea_col):
-            nbr_fea_l = [
-                L1_fea[:, i, :, :, :], L2_fea[:, i, :, :, :],
-                L3_fea[:, i, :, :, :]
+            #### pcd align
+            ref_fea_l = [
+                L1_fea[:, self.center, :, :, :], L2_fea[:, self.center, :, :, :],
+                L3_fea[:, self.center, :, :, :]
             ]
-            fea_col = fea_col.write(i, self.pcd_align(nbr_fea_l, ref_fea_l))
-            i = tf.add(i, 1)
-            return i, N, fea_col
+            aligned_fea = tf.TensorArray(dtype=tf.float32, size=self.nframes)
 
-        _, _, aligned_fea = tf.while_loop(cond, body, [0, N, aligned_fea])
-        aligned_fea = aligned_fea.stack() # [N, B, H, W, C]
-        aligned_fea = tf.transpose(aligned_fea, [1, 0, 2, 3, 4])  # [B, N, H, W, C]
+            def cond(i, N, fea_col):
+                return i < N
+
+            def body(i, N, fea_col):
+                nbr_fea_l = [
+                    L1_fea[:, i, :, :, :], L2_fea[:, i, :, :, :],
+                    L3_fea[:, i, :, :, :]
+                ]
+                fea_col = fea_col.write(i, self.pcd_align(nbr_fea_l, ref_fea_l))
+                i = tf.add(i, 1)
+                return i, N, fea_col
+
+            _, _, aligned_fea = tf.while_loop(cond, body, [0, N, aligned_fea])
+            aligned_fea = aligned_fea.stack() # [N, B, H, W, C]
+            aligned_fea = tf.transpose(aligned_fea, [1, 0, 2, 3, 4])  # [B, N, H, W, C]
+        else:
+            L1_fea = tf.reshape(L1_fea, [B, N, H, W, -1])  # [B, N, H, W, C]
+            aligned_fea = L1_fea
 
         if not self.w_TSA:
             aligned_fea = tf.transpose(aligned_fea, [0, 2, 3, 1, 4])  # [B, H, W, N, C]
@@ -147,7 +158,11 @@ class EDVR(tf.keras.Model):
         y = tf.add(out, base)
         return y, out
 
-    def charbonnier_loss(self, x, y):
+    def charbonnier_sum_loss(self, x, y):
+        loss = tf.reduce_sum(tf.pow(tf.square(x - y) + tf.square(self.config["epsilon"]), self.config["alpha"]))
+        return loss
+
+    def charbonnier_mean_loss(self, x, y):
         loss = tf.reduce_mean(tf.pow(tf.square(x - y) + tf.square(self.config["epsilon"]), self.config["alpha"]))
         return loss
 
