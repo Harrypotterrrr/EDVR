@@ -194,7 +194,7 @@ class REDSDataLoader:
             rtn.append(xx)
         return np.stack(rtn)
 
-    def decode_tfrecord(self, type):
+    def decode_tfrecord(self, type): # TODO read more nframes robostness
         dataset = tf.data.TFRecordDataset(f"{self.tfrecord_path}_{type}")
         feature_description = {
             'nframes': tf.io.FixedLenFeature([], tf.int64),

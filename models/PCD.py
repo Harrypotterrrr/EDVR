@@ -47,7 +47,7 @@ class PCD_Align(tf.keras.Model):
         L2_offset = self.lrelu(self.L2_offset_conv1(L2_offset))
         L3_offset_shape = tf.shape(L3_offset)
         L3_offset = tf.image.resize(L3_offset, (2*L3_offset_shape[1], 2*L3_offset_shape[2]))
-        L2_offset = self.lrelu(self.L2_offset_conv2(tf.concat([L2_offset, L3_offset * 2], axis=3)))
+        L2_offset = self.lrelu(self.L2_offset_conv2(tf.concat([L2_offset, L3_offset * 2], axis=3))) # TODO x2 reason
         L2_offset = self.lrelu(self.L2_offset_conv3(L2_offset))
         L2_fea = self.L2_dcnpack(nbr_fea_l[1], L2_offset)
         L3_fea_shape = tf.shape(L3_fea)
