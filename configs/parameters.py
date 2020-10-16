@@ -14,6 +14,10 @@ def get_parameters():
 
     # Network settings
     parser.add_argument('--nframes', type=int, default=5)
+    parser.add_argument('--w_PCD', type=str2bool, default=True)
+    parser.add_argument('--w_TSA', type=str2bool, default=True)
+    parser.add_argument('--predeblur', type=str2bool, default=False)
+    parser.add_argument('--HR_in', type=str2bool, default=False)
     parser.add_argument('--filter_num', type=int, default=128)
     parser.add_argument('--front_rb', type=int, default=5)
     parser.add_argument('--back_rb', type=int, default=40)
@@ -27,6 +31,7 @@ def get_parameters():
     parser.add_argument('--beta2', type=float, default=0.999)
     parser.add_argument('--alpha', type=float, default=0.5)
     parser.add_argument('--epsilon', type=float, default=1e-3)
+    parser.add_argument('--loss_fn', type=str, default='sum', choices=['mean', 'sum'])
 
     # Learning rate scheduler
     parser.add_argument('--lr_schr', type=str, default='const', choices=['const', 'exp', 'step', 'multi', 'reduce'])
